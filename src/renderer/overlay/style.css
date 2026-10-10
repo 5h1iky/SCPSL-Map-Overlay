@@ -1,0 +1,139 @@
+/* 覆盖层样式：窗口本身完全透明，只有地图底板有底色（§10.2） */
+:root {
+  --font: Consolas, "Sarasa Mono SC", ui-monospace, monospace;
+  --panel-bg: rgba(8, 10, 14, 0.62);
+  --panel-border: rgba(255, 255, 255, 0.16);
+  --text: #e8ecf1;
+  --text-dim: #9aa4b2;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: var(--font);
+  color: var(--text);
+  user-select: none;
+  cursor: default;
+}
+
+body.preview { background: #0b0d12; }
+
+.root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 状态条
+   ⚠️ 这两条（顶部状态条 / 底部图例条）以前会让文字**溢出方框**：
+      它们 `white-space: nowrap`，而 max-width 又被压得很小，flex 子项没有 min-width:0 压不下去。
+      现在：① JS 把宽度贴到**地图面板宽度**并与面板左右对齐；② flex-wrap 允许换行（不再截字）；
+      ③ 溢出隐藏兜底。 */
+.statusbar {
+  position: absolute;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(8, 10, 14, 0.72);
+  border: 1px solid var(--panel-border);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  max-width: calc(100vw - 16px);
+  backdrop-filter: blur(2px);
+  /* 透明度跟随设置滑块（--hud-opacity 由 overlay.js 注入） */
+  opacity: var(--hud-opacity, 0.75);
+}
+.statusbar .sb-dot { color: #4b5563; flex: 0 0 auto; }
+.statusbar .sb-seed { color: #ffd400; font-weight: 600; flex: 0 0 auto; }
+.statusbar .sb-view { color: #8fd3ff; flex: 0 0 auto; }
+.statusbar .sb-route { color: #cfd6e0; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.statusbar .sb-spacer { flex: 1 1 auto; min-width: 0; }
+.statusbar .sb-version { color: var(--text-dim); flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.statusbar .sb-banner { padding-left: 6px; flex: 0 0 auto; }
+.statusbar .sb-banner.warn { color: #ffd400; }
+.statusbar .sb-banner.error { color: #ff6b6b; }
+.statusbar .sb-banner.info { color: #7ee0a8; }
+
+/* 图例条（分区色块 + 分类色块 + 热键提示）—— 与顶部状态条同一套透明度 */
+.legend {
+  position: absolute;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: rgba(8, 10, 14, 0.72);
+  border: 1px solid var(--panel-border);
+  font-size: 11px;
+  color: var(--text-dim);
+  transition: opacity 0.6s ease;
+  overflow: hidden;
+  max-width: calc(100vw - 16px);
+  opacity: var(--hud-opacity, 0.75);
+}
+.lg-item { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+.lg-sep { width: 1px; height: 12px; background: rgba(255, 255, 255, 0.18); flex: 0 0 auto; }
+.lg-hint { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; border: 1px solid rgba(255,255,255,0.25); flex: 0 0 auto; }
+.sw.lcz { background: #2A2F3A; }
+.sw.hcz { background: #3A2A24; }
+.sw.ez { background: #24303A; }
+.sw.sz { background: #24352A; }
+
+/* 错误卡 */
+.errorcard {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 280px;
+  max-width: 520px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(30, 12, 12, 0.86);
+  border: 1px solid rgba(255, 90, 90, 0.5);
+  font-size: 12px;
+}
+.ec-title { color: #ff8080; font-weight: 600; margin-bottom: 6px; }
+.ec-body { color: #f0d6d6; white-space: pre-wrap; word-break: break-all; }
+
+/* 编辑模式外框 */
+.editframe {
+  position: absolute;
+  inset: 6px;
+  border: 1px dashed rgba(120, 200, 255, 0.75);
+  border-radius: 10px;
+  pointer-events: none;
+}
+.ef-hint {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(8, 10, 14, 0.8);
+  border: 1px solid var(--panel-border);
+  color: #9fd8ff;
+}
+
+.hidden { display: none !important; }

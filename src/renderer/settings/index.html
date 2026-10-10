@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>SCP:SL 地图工具 · 设置</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo">◈</span>
+      <div>
+        <div class="title">SCP:SL 地图工具</div>
+        <div class="subtitle" id="subtitle">离线地图覆盖层 · 不读内存 · 不注入 · 不模拟操作</div>
+      </div>
+    </div>
+    <div class="top-status">
+      <span class="pill" id="pill-seed">种子 —</span>
+      <span class="pill" id="pill-version">版本 —</span>
+      <span class="pill" id="pill-watcher">日志 —</span>
+    </div>
+  </header>
+
+  <div id="notice" class="notice hidden">
+    <div class="notice-title">⚠ 使用前必读（尤其是公共服务器）</div>
+    <ul>
+      <li>本工具只读取游戏自己写的日志文件（<code>Player.log</code>、<code>ServerLogs</code>）与按键配置文件。</li>
+      <li><b>不</b>读取游戏内存、<b>不</b>注入 DLL、<b>不</b>拦截网络、<b>不</b>模拟键盘鼠标（包括不会自动帮你敲 <code>seed</code>）。</li>
+      <li>显示的是<b>基于种子的离线推算结果</b>，不包含你的实时位置。</li>
+      <li>在<b>公共服务器</b>使用前，请自行确认该服务器规则是否允许使用外部地图辅助工具；风险由使用者承担。</li>
+      <li>本工具不是官方工具，与 Northwood Studios 无关。</li>
+    </ul>
+    <button class="btn primary" id="ack-notice">我已阅读并理解</button>
+  </div>
+
+  <main>
+    <section class="card">
+      <h2>常规</h2>
+      <label class="row"><input type="checkbox" id="autoStart" /> <span>开机自启</span><em>默认关闭</em></label>
+      <label class="row"><input type="checkbox" id="visibleOnStart" /> <span>启动时显示覆盖层</span></label>
+      <div class="row">
+        <span class="label">日志路径</span>
+        <input type="text" id="logPath" placeholder="自动检测 Player.log" />
+        <button class="btn" id="auto-log">自动检测</button>
+        <button class="btn" id="pick-log">浏览…</button>
+      </div>
+      <div class="row">
+        <span class="label">手动种子</span>
+        <input type="text" id="manualSeed" placeholder="1 – 2147483647（日志读不到时的兜底）" />
+        <button class="btn" id="apply-seed">应用并出图</button>
+        <button class="btn" id="reread">重读日志</button>
+      </div>
+      <div class="row">
+        <span class="label">日志级别</span>
+        <select id="logLevel">
+          <option value="error">error</option>
+          <option value="warn">warn</option>
+          <option value="info">info</option>
+          <option value="debug">debug</option>
+        </select>
+        <button class="btn" id="open-logs">打开日志目录</button>
+        <span class="hint" id="store-hint"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>覆盖层</h2>
+      <div class="row">
+        <span class="label">整体透明度（地图 + 状态条）</span>
+        <input type="range" id="opacity" min="0.3" max="1" step="0.05" />
+        <span class="value" id="opacityValue">0.75</span>
+      </div>
+      <div class="row">
+        <span class="label">缩放档位</span>
+        <input type="range" id="scaleIndex" min="0" max="3" step="1" />
+        <span class="value" id="scaleValue">1.00×</span>
+        <label class="inline"><input type="checkbox" id="autoFit" /> 自动适配</label>
+      </div>
+      <label class="row"><input type="checkbox" id="showLabels" /> <span>显示 POI 标签</span></label>
+      <label class="row"><input type="checkbox" id="colorByCategory" /> <span>重要区域按分类上色</span><em>SCP 收容 / 核心 / 安保 / 检查点 用分类色，其余用统一灰；关掉则整张图同色剪影</em></label>
+      <label class="row"><input type="checkbox" id="showSurfaceBand" /> <span>全设施视图显示地表</span><em>地表只有一个房间，会以底部小条显示；隐藏后主图更大（撤线路线终点不再画出）</em></label>
+      <div class="row">
+        <span class="label">位置</span>
+        <span class="hint" id="anchorHint">—</span>
+        <button class="btn" id="reset-anchor">复位到中下</button>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="toggle-overlay">显示 / 隐藏覆盖层</button>
+        <span class="hint">热键 <code id="hk-toggle-hint">Ctrl+1</code>；编辑模式可拖动（<code id="hk-edit-hint">Ctrl+0</code>）</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>热键</h2>
+      <div id="hotkeyList" class="hotkeys"></div>
+      <div class="row"><span class="hint" id="hotkeyHint">支持 1–3 键：单键 / 双键 / 三键都可以（如 <code>F6</code>、<code>Ctrl+7</code>、<code>Ctrl+Shift+8</code>）。点击输入框后按下想要的组合即生效；<code>Esc</code> 取消，<code>Del</code> 清空（停用该热键）。录入期间全局热键会临时停用。</span></div>
+    </section>
+
+    <section class="card">
+      <h2>版本与诊断</h2>
+      <div class="grid2">
+        <div><span class="label">游戏版本</span><span id="v-game">—</span></div>
+        <div><span class="label">地图模板</span><span id="v-template">—</span></div>
+        <div><span class="label">POI 表</span><span id="v-poi">—</span></div>
+        <div><span class="label">版本闸门</span><span id="v-gate">—</span></div>
+        <div><span class="label">房间 / 连接器边</span><span id="v-rooms">—</span></div>
+        <div><span class="label">未配对连接器</span><span id="v-unpaired">—</span></div>
+        <div><span class="label">跨层通路</span><span id="v-portals">—</span></div>
+        <div><span class="label">生成 / 出图耗时</span><span id="v-timing">—</span></div>
+        <div><span class="label">POI 识别</span><span id="v-poi-stats">—</span></div>
+        <div><span class="label">未映射房名</span><span id="v-missing">—</span></div>
+      </div>
+      <div class="row">
+        <button class="btn" id="recheck">重新检查版本</button>
+        <button class="btn" id="verify">跑一次对拍（需要 snapshot）</button>
+      </div>
+      <pre class="logbox" id="verifyOut"></pre>
+    </section>
+
+    <section class="card">
+      <h2>路线预设</h2>
+      <div id="presetList" class="presets"></div>
+      <div class="row"><span class="hint">勾选的预设会进入 <code id="hk-route-hint">Ctrl+3</code> 的循环。</span></div>
+    </section>
+
+    <section class="card">
+      <h2>自定义路线</h2>
+      <div class="row">
+        <span class="label">起点</span>
+        <select id="cr-from" class="grow"></select>
+      </div>
+      <div class="row">
+        <span class="label">终点</span>
+        <select id="cr-to" class="grow"></select>
+      </div>
+      <div class="row">
+        <span class="label">名称</span>
+        <input type="text" id="cr-label" class="grow" placeholder="留空则自动用「起点 → 终点」" />
+        <button class="btn primary" id="cr-add">添加路线</button>
+      </div>
+      <div class="row">
+        <span class="hint" id="cr-status"></span>
+      </div>
+      <div id="cr-list" class="presets"></div>
+      <div class="row">
+        <span class="hint">端点按「房名 / prefab / 类别」记录，**与种子无关**；换种子后会自动重算这条路线的实际走法（含跨层提示）。</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>边界与合规</h2>
+      <pre class="text" id="compliance"></pre>
+      <div class="row">
+        <button class="btn" id="open-readme">打开 README</button>
+        <button class="btn danger" id="quit">退出程序</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="settings.js"></script>
+</body>
+</html>

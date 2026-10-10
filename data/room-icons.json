@@ -1,0 +1,447 @@
+{
+ "source": "SCP: Secret Laboratory 房间图标（游戏内 SCP-079 / SCP-106 地图所用的图形）",
+ "author": "Northwood Studios",
+ "license": "CC BY-SA 3.0",
+ "licenseUrl": "https://hub.scpslgame.com/index.php?title=Wiki:Licensing",
+ "origin": "https://hub.scpslgame.com/ + 社区地图工具 scpslmaps.fxdyj.com 的 assets/room-icons/",
+ "changes": "转为运行时着色蒙版；按分类重新着色；缩放到格子尺寸。几何与命名未改动。",
+ "canvas": 256,
+ "iconCount": 65,
+ "categories": {
+  "scp": {
+   "label": "SCP 收容间",
+   "color": "#FF6B6B",
+   "alpha": 0.8,
+   "accent": true,
+   "short": "SCP 收容"
+  },
+  "core": {
+   "label": "核心设施",
+   "color": "#FFB238",
+   "alpha": 0.8,
+   "accent": true,
+   "short": "核心"
+  },
+  "security": {
+   "label": "安保 / 武器",
+   "color": "#6AA8FF",
+   "alpha": 0.8,
+   "accent": true,
+   "short": "安保"
+  },
+  "checkpoint": {
+   "label": "检查点 / 电梯 / 大门",
+   "color": "#2BD696",
+   "alpha": 0.82,
+   "accent": true,
+   "short": "检查点"
+  },
+  "personnel": {
+   "label": "人员设施",
+   "color": "#C39BFF",
+   "alpha": 0.78,
+   "accent": false,
+   "short": "人员"
+  },
+  "utility": {
+   "label": "功能房间",
+   "color": "#68D6E8",
+   "alpha": 0.76,
+   "accent": false,
+   "short": "功能"
+  },
+  "deadend": {
+   "label": "死路",
+   "color": "#B5794E",
+   "alpha": 0.76,
+   "accent": false,
+   "short": "死路"
+  },
+  "corridor": {
+   "label": "走廊 / 路口",
+   "color": "#8B93A1",
+   "alpha": 0.72,
+   "accent": false,
+   "short": "走廊"
+  }
+ },
+ "shapeFallback": {
+  "LightContainment": {
+   "Straight": "LCZ_Straight",
+   "Curve": "LCZ_Curve",
+   "TShape": "LCZ_ThreeWay",
+   "XShape": "LCZ_Crossing",
+   "Endroom": "LCZ_LargeEnd"
+  },
+  "HeavyContainment": {
+   "Straight": "HCZ_Straight",
+   "Curve": "HCZ_Curve",
+   "TShape": "HCZ_ThreeWay",
+   "XShape": "HCZ_Crossing",
+   "Endroom": "HCZ_EndLarge"
+  },
+  "Entrance": {
+   "Straight": "EZ_Straight",
+   "Curve": "EZ_Curve",
+   "TShape": "EZ_ThreeWay",
+   "XShape": "EZ_Crossing",
+   "Endroom": "EZ_NonGateEnd"
+  }
+ },
+ "byRoom": {
+  "Unnamed": {
+   "mapIcon": "LCZ_ThreeWay",
+   "category": "corridor",
+   "glyph": "corridor",
+   "label": "T 形路口",
+   "code": "LCZ-04"
+  },
+  "LczComputerRoom": {
+   "mapIcon": "LCZ_PC15",
+   "category": "utility",
+   "glyph": "rect",
+   "label": "电脑房",
+   "code": ""
+  },
+  "LczToilets": {
+   "mapIcon": "LCZ_Toilets",
+   "category": "utility",
+   "glyph": "rect",
+   "label": "卫生间",
+   "code": ""
+  },
+  "LczCheckpointA": {
+   "mapIcon": "LCZ_Checkpoint",
+   "category": "checkpoint",
+   "glyph": "gate",
+   "label": "A 电梯（轻收容侧）",
+   "code": ""
+  },
+  "LczAirlock": {
+   "mapIcon": "LCZ_Airlock",
+   "category": "utility",
+   "glyph": "gate",
+   "label": "气闸室",
+   "code": ""
+  },
+  "LczClassDSpawn": {
+   "mapIcon": "LCZ_Long",
+   "category": "personnel",
+   "glyph": "rect",
+   "label": "D 级人员出生点",
+   "code": ""
+  },
+  "LczCheckpointB": {
+   "mapIcon": "LCZ_Checkpoint",
+   "category": "checkpoint",
+   "glyph": "gate",
+   "label": "B 电梯（轻收容侧）",
+   "code": ""
+  },
+  "LczArmory": {
+   "mapIcon": "LCZ_Armory",
+   "category": "security",
+   "glyph": "shield",
+   "label": "轻型武器库",
+   "code": ""
+  },
+  "Lcz173": {
+   "mapIcon": "LCZ_LargeEnd",
+   "category": "scp",
+   "glyph": "octagon",
+   "label": "旧 173 收容间",
+   "code": ""
+  },
+  "LczGreenhouse": {
+   "mapIcon": "LCZ_Wide",
+   "category": "utility",
+   "glyph": "rect",
+   "label": "温室",
+   "code": ""
+  },
+  "LczGlassroom": {
+   "mapIcon": "LCZ_LargeEnd",
+   "category": "utility",
+   "glyph": "rect",
+   "label": "玻璃房",
+   "code": ""
+  },
+  "Lcz914": {
+   "mapIcon": "LCZ_914",
+   "category": "scp",
+   "glyph": "octagon",
+   "label": "SCP-914 收容间（升级机）",
+   "code": ""
+  },
+  "Lcz330": {
+   "mapIcon": "LCZ_330",
+   "category": "scp",
+   "glyph": "octagon",
+   "label": "糖果屋（SCP-330）",
+   "code": ""
+  },
+  "Hcz939": {
+   "mapIcon": "HCZ_939",
+   "category": "scp",
+   "glyph": "octagon",
+   "label": "SCP-939 收容间",
+   "code": ""
+  },
+  "Hcz049": {
+   "mapIcon": "HCZ_049",
+   "category": "scp",
+   "glyph": "octagon",
+   "label": "049 / 173 收容间",
+   "code": ""
+  },
+  "Hcz079": {
+   "mapIcon": "HCZ_EndLarge",
+   "category": "scp",
+   "glyph": "octagon",
+   "label": "SCP-079 收容间",
+   "code": ""
+  },
+  "HczWaysideIncinerator": {
+   "mapIcon": "HCZ_Wayside",
+   "category": "utility",
+   "glyph": "circle",
+   "label": "路边焚化炉",
+   "code": ""
+  },
+  "Hcz127": {
+   "mapIcon": "HCZ_127",
+   "category": "scp",
+   "glyph": "octagon",
+   "label": "SCP-127 收容间",
+   "code": ""
+  },
+  "HczServers": {
+   "mapIcon": "HCZ_ServerRoom",
+   "category": "utility",
+   "glyph": "rect",
+   "label": "机房",
+   "code": ""
+  },
+  "HczMicroHID": {
+   "mapIcon": "HCZ_Hid",
+   "category": "core",
+   "glyph": "hex",
+   "label": "微型 HID 室",
+   "code": ""
+  },
+  "HczWarhead": {
+   "mapIcon": "HCZ_Nuke",
+   "category": "core",
+   "glyph": "hex",
+   "label": "核弹控制室",
+   "code": ""
+  },
+  "HczCheckpointToEntranceZone": {
+   "mapIcon": "HCZ_Tesla",
+   "category": "checkpoint",
+   "glyph": "gate",
+   "label": "下检查点（通往办公区）",
+   "code": ""
+  },
+  "HczTesla": {
+   "mapIcon": "HCZ_Tesla",
+   "category": "security",
+   "glyph": "pass",
+   "label": "电网",
+   "code": ""
+  },
+  "HczTestroom": {
+   "mapIcon": "HCZ_Testroom",
+   "category": "utility",
+   "glyph": "rect",
+   "label": "老狗家",
+   "code": ""
+  },
+  "HczAcroamaticAbatement": {
+   "mapIcon": "HCZ_CrossingWater",
+   "category": "utility",
+   "glyph": "rect",
+   "label": "瀑布房",
+   "code": ""
+  },
+  "Hcz096": {
+   "mapIcon": "HCZ_EndSmall",
+   "category": "scp",
+   "glyph": "octagon",
+   "label": "SCP-096 收容间",
+   "code": ""
+  },
+  "HczArmory": {
+   "mapIcon": "HCZ_Armory",
+   "category": "security",
+   "glyph": "shield",
+   "label": "重型武器库",
+   "code": ""
+  },
+  "Hcz106": {
+   "mapIcon": "HCZ_EndLarge",
+   "category": "scp",
+   "glyph": "octagon",
+   "label": "SCP-106 收容间",
+   "code": ""
+  },
+  "HczRampTunnel": {
+   "mapIcon": "HCZ_ThreeWay",
+   "category": "utility",
+   "glyph": "pass",
+   "label": "斜坡",
+   "code": ""
+  },
+  "HczCheckpointA": {
+   "mapIcon": "HCZ_Elevators",
+   "category": "checkpoint",
+   "glyph": "gate",
+   "label": "A 电梯（重收容侧）",
+   "code": ""
+  },
+  "HczCheckpointB": {
+   "mapIcon": "HCZ_Elevators",
+   "category": "checkpoint",
+   "glyph": "gate",
+   "label": "B 电梯（重收容侧）",
+   "code": ""
+  },
+  "EzGateA": {
+   "mapIcon": "EZ_GateA",
+   "category": "checkpoint",
+   "glyph": "gate",
+   "label": "A 大门（地表出口）",
+   "code": ""
+  },
+  "EzOfficeLarge": {
+   "mapIcon": "EZ_Thicc",
+   "category": "utility",
+   "glyph": "rect",
+   "label": "大型办公室",
+   "code": ""
+  },
+  "EzIntercom": {
+   "mapIcon": "EZ_Intercom",
+   "category": "utility",
+   "glyph": "rect",
+   "label": "广播室",
+   "code": ""
+  },
+  "EzGateB": {
+   "mapIcon": "EZ_GateB",
+   "category": "checkpoint",
+   "glyph": "gate",
+   "label": "B 大门（地表出口）",
+   "code": ""
+  },
+  "EzEvacShelter": {
+   "mapIcon": "EZ_NonGateEnd",
+   "category": "deadend",
+   "glyph": "dead",
+   "label": "避难所",
+   "code": ""
+  },
+  "EzRedroom": {
+   "mapIcon": "EZ_NonGateEnd",
+   "category": "deadend",
+   "glyph": "dead",
+   "label": "红房",
+   "code": ""
+  },
+  "EzOfficeSmall": {
+   "mapIcon": "EZ_Asymmetric",
+   "category": "utility",
+   "glyph": "rect",
+   "label": "小型办公室",
+   "code": ""
+  },
+  "EzOfficeStoried": {
+   "mapIcon": "EZ_Thicc",
+   "category": "utility",
+   "glyph": "rect",
+   "label": "普通办公室",
+   "code": ""
+  },
+  "EzCollapsedTunnel": {
+   "mapIcon": "EZ_Collapsed",
+   "category": "deadend",
+   "glyph": "dead",
+   "label": "坍塌隧道",
+   "code": ""
+  }
+ },
+ "icons": [
+  "4RW",
+  "CDE",
+  "CDN",
+  "CDS",
+  "CDW",
+  "CNE",
+  "CNW",
+  "CSE",
+  "CSW",
+  "ERE",
+  "ERN",
+  "ERS",
+  "ERW",
+  "EZ_Asymmetric",
+  "EZ_Checkpoint",
+  "EZ_Collapsed",
+  "EZ_Crossing",
+  "EZ_Curve",
+  "EZ_GateA",
+  "EZ_GateB",
+  "EZ_Intercom",
+  "EZ_NonGateEnd",
+  "EZ_Straight",
+  "EZ_Thicc",
+  "EZ_ThreeWay",
+  "HCZ_049",
+  "HCZ_127",
+  "HCZ_939",
+  "HCZ_Armory",
+  "HCZ_Crossing",
+  "HCZ_CrossingWater",
+  "HCZ_Curve",
+  "HCZ_Elevators",
+  "HCZ_EndLarge",
+  "HCZ_EndSmall",
+  "HCZ_Hid",
+  "HCZ_Nuke",
+  "HCZ_ServerRoom",
+  "HCZ_Straight",
+  "HCZ_Straight_Pipe",
+  "HCZ_Tesla",
+  "HCZ_Testroom",
+  "HCZ_ThreeWay",
+  "HCZ_ThreeWayJunk",
+  "HCZ_Wayside",
+  "LCZ_330",
+  "LCZ_914",
+  "LCZ_Airlock",
+  "LCZ_Armory",
+  "LCZ_Checkpoint",
+  "LCZ_Crossing",
+  "LCZ_Curve",
+  "LCZ_LargeEnd",
+  "LCZ_Long",
+  "LCZ_PC15",
+  "LCZ_Straight",
+  "LCZ_ThreeWay",
+  "LCZ_Toilets",
+  "LCZ_Wide",
+  "SRN",
+  "SRW",
+  "TRE",
+  "TRN",
+  "TRS",
+  "TRW"
+ ],
+ "byRoomZone": {
+  "Entrance|HczCheckpointToEntranceZone": "EZ_Checkpoint"
+ },
+ "byRoomZoneCategory": {
+  "Entrance|HczCheckpointToEntranceZone": "checkpoint"
+ },
+ "canvasNote": "贴图两族：形状族（4RW/CDx/Cxx/ERx/SRxx/TRx）为 1024×1024；房间族（LCZ_*/HCZ_*/EZ_*）为 256×256。两者画布都等于 1 格（15 世界单位），房间居中。"
+}

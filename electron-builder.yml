@@ -1,0 +1,53 @@
+appId: com.local.scpsl-map-overlay
+productName: SCPSL 地图工具
+copyright: 非官方工具 · 与 Northwood Studios 无关
+
+directories:
+  output: dist
+  buildResources: assets
+
+# 不用 asar：主进程是纯 ESM，还要用 file:// 动态 import 生成器，
+# 打包成 asar 后 Node 的 ESM loader 读不了 asar 内部路径（classic 坑），
+# 所以直接把文件摊开，换来的是"打包后行为 = 开发时行为"。
+asar: false
+
+files:
+  - package.json
+  - README.md
+  - NOTICE.md
+  - src/**/*
+  - data/**/*
+  - assets/icon*.png
+  # 房间图标（SCP:SL 官方 wiki，CC BY-SA 3.0，见 NOTICE.md 第 3 节）：
+  # 渲染进程按 file:// 相对路径取用，必须打进发布包。
+  - assets/room-icons/**/*
+  - '!**/*.md.bak'
+  - '!out/**'
+  - '!dist/**'
+  - '!test/**'
+  - '!tools/**'
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: assets/icon.png
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SCPSL 地图工具
+  deleteAppDataOnUninstall: false
+  # 让安装包自己创建的快捷方式带上 --no-sandbox（见 build/installer.nsh 里的说明），
+  # 这样在 Chromium 沙箱起不来的机器上，用户双击快捷方式也能正常启动，
+  # 不需要任何脚本 / WMI / 环境变量之类会被安全软件盯上的手段。
+  include: build/installer.nsh
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
