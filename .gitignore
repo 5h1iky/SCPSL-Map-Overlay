@@ -1,0 +1,21 @@
+# 依赖与构建产物
+node_modules/
+dist/
+out/
+
+# 日志
+*.log
+debug.log
+logs/
+
+# 开发 / 测试工具（按作者要求不入库）
+tools/
+test/
+
+# 渲染截图的伴随报告
+docs/*.json
+
+# 系统杂物
+Thumbs.db
+Desktop.ini
+.DS_Store

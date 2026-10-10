@@ -1,0 +1,27 @@
+{
+  "name": "@scpsl-tools/map-seed",
+  "version": "1.0.0",
+  "description": "Generate deterministic SCP: Secret Laboratory maps from a seed.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["src", "data/manifest.json", "data/mapgen-compiled-14.2.7.json", "README.md", "LICENSE"],
+  "scripts": {
+    "compile:templates": "node scripts/compile-template.mjs",
+    "benchmark": "node scripts/benchmark.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kldhsh123/scpsl-map-seed.git"
+  },
+  "bugs": { "url": "https://github.com/kldhsh123/scpsl-map-seed/issues" },
+  "license": "MIT"
+}

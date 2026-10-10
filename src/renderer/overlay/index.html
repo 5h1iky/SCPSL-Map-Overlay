@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>SCP:SL 地图覆盖层</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="overlay-body">
+  <div id="root" class="root">
+    <canvas id="map"></canvas>
+
+    <div id="statusbar" class="statusbar hidden">
+      <span class="sb-seed" id="sb-seed">种子 —</span>
+      <span class="sb-dot">·</span>
+      <span class="sb-view" id="sb-view">视图 —</span>
+      <span class="sb-dot">·</span>
+      <span class="sb-route" id="sb-route">路线 —</span>
+      <span class="sb-spacer"></span>
+      <span class="sb-version" id="sb-version"></span>
+      <span class="sb-banner" id="sb-banner"></span>
+    </div>
+
+    <div id="legend" class="legend hidden">
+      <span id="lg-swatches" class="lg-swatches"></span>
+      <span class="lg-sep"></span>
+      <span class="lg-hint" id="lg-hint"></span>
+    </div>
+
+    <div id="error" class="errorcard hidden">
+      <div class="ec-title" id="ec-title">出错了</div>
+      <div class="ec-body" id="ec-body"></div>
+    </div>
+
+    <div id="editframe" class="editframe hidden">
+      <div class="ef-hint">编辑模式：拖动移动 · 滚轮缩放 · 右键复位 · Esc / <span id="ef-hint-exit">Ctrl+0</span> 退出</div>
+    </div>
+  </div>
+
+  <script src="render.js"></script>
+  <script src="overlay.js"></script>
+</body>
+</html>
