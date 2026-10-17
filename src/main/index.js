@@ -84,6 +84,8 @@ let editMode = false;
 /** 热键录入中：临时注销全局热键，避免按键被 RegisterHotKey 抢走（否则录不进去） */
 let captureMode = false;
 let versionTimer = null;
+/** v0.3.1：未捕获异常计数（防止日志链路自身出错时无限递归刷日志） */
+let uncaughtCount = 0;
 
 /* ── 单实例锁 ────────────────────────────────────────────── */
 if (!app.requestSingleInstanceLock()) {
@@ -702,7 +704,12 @@ function wireHotkeys() {
 async function bootstrap() {
   settings = new Settings(join(app.getPath('userData'), 'settings.json'));
   settings.load();
-  logger = new Logger(join(app.getPath('userData'), 'logs'), { level: settings.data.logLevel });
+  logger = new Logger(join(app.getPath('userData'), 'logs'), {
+    level: settings.data.logLevel,
+    // v0.3.1：打包版从快捷方式启动时没有控制台，stdout 可能是坏句柄；
+    // 回显只服务开发调试，打包版一律关掉（文件日志照常写）。
+    echo: !app.isPackaged,
+  });
   logger.info('启动', { version: app.getVersion(), electron: process.versions.electron, settings: settings.filePath });
 
   controller = new AppController({ generatorEntry, poiTablePath, iconManifestPath, logger, settings });
@@ -804,5 +811,14 @@ app.on('before-quit', () => {
 });
 
 process.on('uncaughtException', (error) => {
-  logger?.error('未捕获异常', { message: error.message, stack: error.stack });
+  /**
+   * v0.3.1：日志链路自身出错时（典型：stdout EPIPE）绝不能无限递归。
+   * 旧实现里 logger.error 会再写 stdout → 再抛 → 再进这里，20 秒能写 24MB 日志。
+   * 现在 Logger 自己会停掉坏掉的回显，这里再加一道次数闸门兜底。
+   */
+  uncaughtCount += 1;
+  if (uncaughtCount > 5) return;
+  try {
+    logger?.error('未捕获异常', { message: error?.message ?? String(error), stack: error?.stack });
+  } catch { /* 忽略：日志失败不影响主流程 */ }
 });

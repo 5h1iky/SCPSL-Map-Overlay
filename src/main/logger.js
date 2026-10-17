@@ -6,12 +6,36 @@ import { join } from 'node:path';
 
 const LEVEL_ORDER = { debug: 10, info: 20, warn: 30, error: 40 };
 
+/**
+ * 安全回显（v0.3.1）。
+ *
+ * 旧代码直接 `process.stdout.write()`，没有 try/catch：
+ * 打包版从快捷方式启动、或父进程（脚本/管道）提前退出时，stdout 会抛 EPIPE/EBADF；
+ * 异常落到 `uncaughtException` → 又调 `logger.error` → 又写 stdout → 又抛……
+ * 形成无限递归。2026-10-17 用「PowerShell 启动 GUI 后立即退出」实测：
+ * 20 秒写出 24MB 日志、CPU 打满。这里失败一次就返回 false，由 Logger 永久停掉回显。
+ *
+ * @returns {boolean} 是否成功写入
+ */
+export function safeWrite(stream, text) {
+  try {
+    if (!stream || stream.writable === false) return false;
+    stream.write(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export class Logger {
-  constructor(dir, { level = 'info', keepDays = 7, echo = true } = {}) {
+  constructor(dir, { level = 'info', keepDays = 7, echo = true, echoStream = process.stdout } = {}) {
     this.dir = dir;
     this.level = level;
     this.keepDays = keepDays;
     this.echo = echo;
+    this.echoStream = echoStream;
+    /** 回显通道坏掉后永久置 true（例如 stdout EPIPE），避免每次写日志都再抛一次 */
+    this.echoBroken = false;
     this.buffer = [];
     try {
       mkdirSync(dir, { recursive: true });
@@ -47,7 +71,9 @@ export class Logger {
     this.buffer.push(line);
     if (this.buffer.length > 500) this.buffer.shift();
     if (LEVEL_ORDER[level] < LEVEL_ORDER[this.level]) return;
-    if (this.echo) process.stdout?.write?.(`${line}\n`);
+    if (this.echo && !this.echoBroken) {
+      if (!safeWrite(this.echoStream, `${line}\n`)) this.echoBroken = true;
+    }
     const file = this.file();
     if (!file) return;
     try {
