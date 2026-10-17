@@ -164,12 +164,12 @@ export function scheduleSelftest(ctx) {
       return size;
     });
 
-    // 5c) 多显示器跟随：记录游戏窗口探测结果（本机没开游戏时为 null，属正常）
+    // 5c) 显示器定位：记录一次「按游戏窗口定位」的探测结果（本机没开游戏时为 null，属正常）
     await step('display:game-window', async () => {
       const { findGameDisplay } = await import('./game-window-finder.js');
-      const found = await findGameDisplay();
+      const found = await findGameDisplay({ screenApi: electron.default.screen });
       return found
-        ? { gameTitle: found.title, displayId: String(found.display.id), label: found.display.label }
+        ? { displayId: String(found.display.id), label: found.display.label, deviceName: found.deviceName }
         : '未找到游戏窗口（本机没运行 SCP:SL，正常）';
     });
 

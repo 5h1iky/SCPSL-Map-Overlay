@@ -211,6 +211,20 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 
 .hidden { display: none !important; }
 
+/* v0.3.1：页脚版本号（最下面，不抢内容） */
+.footer {
+  max-width: 1080px;
+  margin: 4px 18px 22px;
+  padding-top: 12px;
+  border-top: 1px solid var(--card-border);
+  color: var(--dim);
+  font-size: 11px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.footer-sep { color: #3a4350; }
+
 /* ── v0.3.1 快速上手 ───────────────────────────────────────
    设计意图（用户反馈"不可关不行"）：
    · 可收起，收起状态存进设置，下次还是收起的；

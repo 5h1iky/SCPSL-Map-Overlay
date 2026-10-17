@@ -29,24 +29,27 @@ import { fileURLToPath } from 'node:url';
 export const GAME_WINDOW_TITLE = 'SCP: Secret Laboratory';
 
 /**
- * v0.3.1 探测节奏（实测：本机一次探测 2.1–2.4 秒，因为每次都要 PowerShell + Add-Type 编译 C#）：
- *   · 探到游戏 → 30 秒后再看（切屏是低频事件，15–30 秒延迟无感）；
- *   · 没探到游戏 → 退避到 2 分钟（游戏没开时完全没必要频繁起进程）；
- *   · 单显示器 → 一次都不探（这条功能对单屏没有意义）。
- * 结果就是：单屏用户 0 次 PowerShell；多屏用户每分钟最多 2 次。
+ * 显示器选择（v0.3.1 重新设计）：**不再定时探测游戏窗口**。
+ *
+ * 为什么推翻 v0.3.0 的“自动跟随”：
+ *   要判断游戏窗口在哪块屏，只能问系统（PowerShell + Win32），实测单次 2.1–2.4 秒；
+ *   每 3 秒一次 = 系统几乎一直在起 PowerShell，鼠标周期性卡顿、磁盘/CPU 被打满。
+ *   而“游戏换屏”是极低频事件 —— 让用户在设置里选一块屏就够，换屏时点一次「定位游戏窗口」。
+ *
+ * 这个纯函数负责把「用户选的 displayId」解析成 Electron display：
+ *   找得到 → 用它；找不到（显示器拔了/换机器）→ 主显示器；再没有 → 第一个。
+ * @param {Array<{id:number,isPrimary?:boolean}>} displays screen.getAllDisplays()
+ * @param {number|null} displayId 设置里存的 id；null = 主显示器
+ * @returns {object|null}
  */
-export const DISPLAY_PROBE_INTERVAL_MS = 30_000;
-export const DISPLAY_PROBE_BACKOFF_MS = 120_000;
-
-/**
- * 是否可以/需要探测游戏窗口所在显示器（纯函数，单测锁行为）。
- * @param {{mode?: string, displayCount?: number, visible?: boolean}} opts
- * @returns {boolean}
- */
-export function shouldPollGameDisplay({ mode = 'auto', displayCount = 1, visible = false } = {}) {
-  if (mode !== 'auto') return false;          // 固定主屏：不跟
-  if (!Number.isFinite(displayCount) || displayCount <= 1) return false; // 单屏：不探（卡顿根因）
-  return visible === true;                    // 覆盖层隐藏时也没必要探
+export function pickDisplay(displays, displayId = null) {
+  if (!Array.isArray(displays) || displays.length === 0) return null;
+  if (displayId !== null && displayId !== undefined) {
+    const wanted = String(displayId);
+    const match = displays.find((d) => String(d.id) === wanted);
+    if (match) return match;
+  }
+  return displays.find((d) => d.isPrimary) ?? displays[0] ?? null;
 }
 
 /** 标题是否就是游戏窗口（大小写不敏感的前缀匹配，兼容 [beta] 等后缀） */

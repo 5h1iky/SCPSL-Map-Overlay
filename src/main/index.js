@@ -27,8 +27,7 @@ import { HOTKEY_LABEL, ROUTE_PRESETS, STYLE, VIEW_LABEL, REPO_URL, RELEASES_URL 
 import { runVerify } from './verifier.js';
 import { scheduleSelftest, selftestRequested } from './selftest.js';
 import {
-  findGameDisplay, shouldPollGameDisplay,
-  DISPLAY_PROBE_INTERVAL_MS, DISPLAY_PROBE_BACKOFF_MS,
+  findGameDisplay, pickDisplay,
 } from './game-window-finder.js';
 import { describeSession } from './session-state.js';
 
@@ -125,18 +124,47 @@ function broadcastStatus() {
 }
 
 /* ── 窗口 ────────────────────────────────────────────────── */
-/** 覆盖层当前所在的显示器 id（v0.3.0 多显示器跟随用；null = 还没决定） */
+/** 覆盖层当前所在的显示器 id（字符串；诊断用） */
 let currentDisplayId = null;
-/**
- * 下一次探测的定时器。v0.3.1 从 setInterval 改成**递归 setTimeout**：
- * 永远只有一轮在排队，不会出现「上一轮还没回来、下一轮又起一个 PowerShell」。
- */
-let displayFollowTimer = null;
-/** 同一时刻只允许一个探测在飞（v0.3.1：实测单次探测 2.1–2.4 秒，3 秒定时器必然叠加） */
+/** 手动「定位游戏窗口」同一时刻只允许一个探测（PowerShell 单次 2.1–2.4 秒） */
 let displayProbeInFlight = false;
 
+/** 显示器清单（设置页下拉框用；启动时枚举，显示器增删时刷新） */
+function displayList() {
+  const primary = screen.getPrimaryDisplay();
+  return screen.getAllDisplays().map((d) => ({
+    id: d.id,
+    label: d.label,
+    primary: d.id === primary.id,
+    width: d.bounds.width,
+    height: d.bounds.height,
+    x: d.bounds.x,
+    y: d.bounds.y,
+    scaleFactor: d.scaleFactor,
+  }));
+}
+
+/**
+ * v0.3.1：把覆盖层放到设置里选定的显示器（找不到就主屏）。
+ * **纯窗口操作，不探测、不起任何子进程** —— 这是替代 v0.3.0 定时探测的核心。
+ */
+function applyOverlayDisplay({ persist = false } = {}) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return null;
+  const display = pickDisplay(screen.getAllDisplays(), settings.data.overlay.displayId);
+  if (!display) return null;
+  const { x, y, width, height } = display.bounds;
+  overlayWindow.setBounds({ x, y, width, height });
+  currentDisplayId = String(display.id);
+  if (persist && settings.data.overlay.displayId !== display.id) {
+    settings.patch('overlay.displayId', display.id);
+  }
+  pushOverlayState();
+  return display;
+}
+
 function createOverlayWindow() {
-  const display = screen.getPrimaryDisplay();
+  const display = pickDisplay(screen.getAllDisplays(), settings.data.overlay.displayId)
+    ?? screen.getPrimaryDisplay();
   const { x, y, width, height } = display.bounds;
   currentDisplayId = String(display.id);
   overlayWindow = new BrowserWindow({
@@ -180,96 +208,36 @@ function createOverlayWindow() {
 }
 
 /**
- * v0.3.0：把覆盖层移到指定显示器（游戏窗口所在屏）。
- * 单显示器 / 同一个屏 / 找不到游戏 → 什么都不做（不乱跳）。
- *
- * v0.3.1：加 in-flight 锁。实测探测器单次 2.1–2.4 秒（PowerShell + Add-Type 编译 C#），
- * 原来 3 秒的 setInterval 会在探测没回来时再起一个进程，进程越叠越多 —— 这是鼠标卡顿的放大器。
+ * v0.3.1：按游戏窗口定位覆盖层，**只探测这一次**，不排任何定时器。
+ * 触发点只有两个：设置页「定位游戏窗口」按钮、启动时勾选的 probeOnStart。
+ * 单次成本约 2.1–2.4 秒（PowerShell + Add-Type），用户能明确感知这一次，但不会周期性卡顿。
  */
-async function followGameDisplay({ force = false } = {}) {
+async function locateGameDisplay({ persist = true } = {}) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return null;
-  if (!force && settings.data.overlay.display !== 'auto') return null;
   if (displayProbeInFlight) return null;
   displayProbeInFlight = true;
+  const started = Date.now();
   try {
     const found = await findGameDisplay({ screenApi: screen });
     if (!found) return null;
-    const targetId = String(found.display.id);
-    if (targetId === currentDisplayId) return found.display;
     const { x, y, width, height } = found.display.bounds;
     overlayWindow.setBounds({ x, y, width, height });
-    currentDisplayId = targetId;
-    logger?.info?.('覆盖层跟随游戏窗口换屏', { displayId: targetId, label: found.display.label });
+    currentDisplayId = String(found.display.id);
+    if (persist && settings.data.overlay.displayId !== found.display.id) {
+      settings.patch('overlay.displayId', found.display.id);
+    }
+    logger?.info?.('按游戏窗口定位覆盖层（单次探测）', {
+      displayId: String(found.display.id), label: found.display.label, ms: Date.now() - started,
+    });
     // 换屏后 DPI 可能不同：让渲染进程重新量一次（overlay.js 的 dpr 轮询兜底）
     pushOverlayState();
     return found.display;
   } catch (error) {
-    logger?.warn?.('跟随游戏显示器失败', { error: error.message });
+    logger?.warn?.('定位游戏窗口失败', { error: error.message });
     return null;
   } finally {
     displayProbeInFlight = false;
   }
-}
-
-/** 排下一轮探测。单屏 / 固定主屏时**不排**（v0.3.1 卡顿修复的关键）。 */
-function scheduleDisplayProbe(delay = 0) {
-  if (displayFollowTimer) {
-    clearTimeout(displayFollowTimer);
-    displayFollowTimer = null;
-  }
-  if (!settings) return;
-  if (settings.data.overlay.display !== 'auto') return;
-  if (screen.getAllDisplays().length <= 1) return;
-  displayFollowTimer = setTimeout(runDisplayProbe, Math.max(0, delay));
-  displayFollowTimer.unref?.();
-}
-
-/**
- * 一轮探测。
- * 只有「多屏 + auto + 覆盖层可见」才会真正 fork PowerShell；
- * 隐藏时直接不排（重新显示时 setOverlayVisible 会立刻补一次）。
- */
-async function runDisplayProbe() {
-  displayFollowTimer = null;
-  if (!settings) return;
-  if (settings.data.overlay.display !== 'auto') return;
-  if (screen.getAllDisplays().length <= 1) return;
-  if (!overlayWindow || overlayWindow.isDestroyed() || !overlayWindow.isVisible()) return;
-  const started = Date.now();
-  let found = null;
-  try {
-    found = await followGameDisplay();
-  } finally {
-    // 探到游戏：30 秒后再看；没探到：退避到 2 分钟（游戏没开时没必要一直起进程）
-    logger?.debug?.('显示器跟随探测', { ms: Date.now() - started, found: Boolean(found) });
-    scheduleDisplayProbe(found ? DISPLAY_PROBE_INTERVAL_MS : DISPLAY_PROBE_BACKOFF_MS);
-  }
-}
-
-/** 启动/关闭跟随探测（设置里的 display 开关 + 显示器增删时重判） */
-function wireDisplayFollow() {
-  if (displayFollowTimer) {
-    clearTimeout(displayFollowTimer);
-    displayFollowTimer = null;
-  }
-  if (!settings) return;
-  if (settings.data.overlay.display !== 'auto') return;
-  if (screen.getAllDisplays().length <= 1) {
-    // 单屏：这条功能没有任何意义 → 一次 PowerShell 都不起
-    logger?.info?.('单显示器：不启用游戏窗口跟随探测');
-    return;
-  }
-  scheduleDisplayProbe(1200);
-}
-
-/** 切回 primary 模式：把覆盖层移回主屏（用户显式选的固定行为） */
-function resetOverlayToPrimary() {
-  if (!overlayWindow || overlayWindow.isDestroyed()) return;
-  const display = screen.getPrimaryDisplay();
-  const { x, y, width, height } = display.bounds;
-  overlayWindow.setBounds({ x, y, width, height });
-  currentDisplayId = String(display.id);
-  pushOverlayState();
 }
 
 function overlayState() {
@@ -283,8 +251,9 @@ function overlayState() {
     showLabels: settings.data.overlay.showLabels,
     /** 重要区域按分类上色（关掉 = 整张图同色剪影） */
     colorByCategory: settings.data.overlay.colorByCategory,
-    /** v0.3.0：多显示器跟随开关（渲染端据此决定是否监听 dpr 变化） */
-    display: settings.data.overlay.display,
+    /** v0.3.1：地图固定显示在哪块屏（null=主屏）；「定位游戏窗口」只探测一次，后台永不轮询 */
+    displayId: settings.data.overlay.displayId,
+    probeOnStart: settings.data.overlay.probeOnStart,
     editMode,
     fitHeightRatio: STYLE.fitHeightRatio,
   };
@@ -334,10 +303,7 @@ function setOverlayVisible(visible) {
   if (visible) {
     overlayWindow.showInactive();
     overlayWindow.setAlwaysOnTop(true, 'screen-saver');
-    // v0.3.1：隐藏期间不做跨进程探测，重新显示时立刻补一次（多屏才需要）
-    if (settings?.data?.overlay?.display === 'auto' && screen.getAllDisplays().length > 1) {
-      scheduleDisplayProbe(300);
-    }
+    // v0.3.1：显示时不做任何探测 —— 地图在用户选定的那块屏上，位置早已由 applyOverlayDisplay 定好
   } else {
     overlayWindow.hide();
   }
@@ -467,9 +433,13 @@ function registerIpc() {
       defaultLogPath: defaultPlayerLogPath(),
       noticeAcknowledged: settings.data.noticeAcknowledged,
       appVersion: app.getVersion(),
+      /** v0.3.1：设置页页脚显示版本用 */
+      runtime: { electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
       /** v0.3.1：设置页「GitHub 仓库」按钮用；主进程白名单里也只认这两个地址 */
       repoUrl: REPO_URL,
       releasesUrl: RELEASES_URL,
+      /** v0.3.1：启动时枚举到的显示器清单，设置页据此生成下拉框（不轮询） */
+      displays: displayList(),
       dataDir,
     },
   }));
@@ -533,12 +503,14 @@ function registerIpc() {
     if (patch.editMode !== undefined) setEditMode(patch.editMode);
     // 全设施视图的地表开关会影响分带排布 → 重新出图
     if (bandChanged) controller.buildLayoutNow();
-    // 显示器跟随开关变了 → 起停轮询（primary 模式立即换回主屏）
-    if (patch.display !== undefined && patch.display !== settings.data.overlay.display) {
-      settings.patch('overlay.display', patch.display === 'primary' ? 'primary' : 'auto');
-      wireDisplayFollow();
-      if (patch.display === 'primary') resetOverlayToPrimary();
+    // v0.3.1：显示器选择（null = 主屏）。纯窗口搬移，不探测、不起子进程。
+    if (patch.displayId !== undefined) {
+      const next = patch.displayId === null || patch.displayId === '' ? null : Number(patch.displayId);
+      settings.patch('overlay.displayId', Number.isFinite(next) ? next : null);
+      applyOverlayDisplay();
     }
+    // v0.3.1：启动时是否探测一次（单次，不是轮询）
+    if (patch.probeOnStart !== undefined) settings.patch('overlay.probeOnStart', Boolean(patch.probeOnStart));
     pushOverlayState();
     return { settings: settings.data, ...statusPayload() };
   });
@@ -581,6 +553,20 @@ function registerIpc() {
     }
     logger?.warn?.('拒绝打开未授权链接', { url: String(url ?? '').slice(0, 200) });
     return { ok: false, error: 'URL_NOT_ALLOWED' };
+  });
+
+  /**
+   * v0.3.1：按游戏窗口定位一次（设置页「定位游戏窗口」按钮）。
+   * ⚠️ 这是**单次探测**：PowerShell + Win32，约 2–3 秒，点一次只跑一次；后台没有定时器。
+   */
+  ipcMain.handle('intent:locateGameDisplay', async () => {
+    const display = await locateGameDisplay();
+    return {
+      ...statusPayload(),
+      settings: settings.data,
+      displays: displayList(),
+      located: display ? { id: display.id, label: display.label } : null,
+    };
   });
 
   ipcMain.handle('app:quit', () => { app.isQuitting = true; app.quit(); });
@@ -731,12 +717,16 @@ async function bootstrap() {
   registerIpc();
   wireHotkeys();
 
-  // v0.3.1：显示器热插拔 / 分辨率变化 → 重新判断要不要跟随（监听只注册一次，
-  // 否则每次改设置都会叠加一个监听器 —— v0.3.0 的旧写法有这个问题）。
-  screen.on('display-metrics-changed', () => { wireDisplayFollow(); });
-  screen.on('display-added', () => { wireDisplayFollow(); });
-  screen.on('display-removed', () => { wireDisplayFollow(); });
-  wireDisplayFollow();
+  // v0.3.1：显示器热插拔 / 分辨率变化 → 只重新摆放窗口（不探测、不起任何子进程）
+  screen.on('display-metrics-changed', () => { applyOverlayDisplay(); });
+  screen.on('display-added', () => { applyOverlayDisplay(); });
+  screen.on('display-removed', () => { applyOverlayDisplay(); });
+  applyOverlayDisplay();
+
+  // 可选：启动时按游戏窗口定位一次（默认关；只问系统一次，绝不轮询）
+  if (settings.data.overlay.probeOnStart) {
+    setTimeout(() => { locateGameDisplay().catch(() => {}); }, 1200).unref?.();
+  }
 
   watcher = new LogWatcher({ logPath: settings.data.seed.logPath || defaultPlayerLogPath() });
   watcher.on('seed', ({ seed, source }) => handleSeed(seed, source, { holiday: watcher.signals.holiday }));

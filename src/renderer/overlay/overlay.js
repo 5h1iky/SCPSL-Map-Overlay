@@ -38,8 +38,6 @@
     anchor: { x: 0.5, y: 0.62 },
     showLabels: true,
     colorByCategory: true,
-    /** v0.3.0：多显示器跟随开关（'auto' = 跟随游戏窗口） */
-    display: 'auto',
     editMode: false,
     fitHeightRatio: 0.35,
     hotkeys: null,
@@ -377,7 +375,6 @@
       state.editMode = Boolean(overlay.editMode);
       state.visible = overlay.visible ?? state.visible;
       state.fitHeightRatio = overlay.fitHeightRatio ?? state.fitHeightRatio;
-      state.display = overlay.display ?? state.display;
       if (prevScale !== state.scale) state.transform = null;
       redraw();
       renderStatus();
@@ -396,12 +393,12 @@
   window.addEventListener('resize', resize);
 
   /**
-   * v0.3.0：DPI 变化兜底。窗口被搬到另一个缩放比不同的显示器时，
-   * Electron 有时不触发 resize —— 这里 1 秒轮询一次 devicePixelRatio，
-   * 变了就重设画布（代价极小：一次比较）。auto 模式下才有必要。
+   * v0.3.1：DPI 变化兜底。窗口被搬到另一块缩放比不同的显示器时，
+   * Electron 有时不触发 resize —— 这里 1 秒比较一次 devicePixelRatio（代价极小：一次比较）。
+   * 显示器现在是用户固定选的，「定位游戏窗口」会在换屏后推 overlay:state，所以不再需要
+   * v0.3.0 那种「auto 模式才轮询」的条件。
    */
   setInterval(() => {
-    if (state.display !== 'auto') return;
     const dpr = window.devicePixelRatio || 1;
     if (dpr !== state.dpr) resize();
   }, 1000);

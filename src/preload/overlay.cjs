@@ -35,6 +35,8 @@ const api = {
     setCapture: (enabled) => ipcRenderer.invoke('intent:setCapture', { enabled }),
     captureKey: (ev) => ipcRenderer.invoke('intent:captureKey', ev),
     exportPng: () => ipcRenderer.invoke('intent:exportPng', {}),
+    /** v0.3.1：按游戏窗口定位一次（单次探测，不是轮询） */
+    locateGameDisplay: () => ipcRenderer.invoke('intent:locateGameDisplay', {}),
     listPois: () => ipcRenderer.invoke('intent:listPois', {}),
     setPresets: (presets) => ipcRenderer.invoke('intent:setPresets', { presets }),
     verifyRun: (seeds) => ipcRenderer.invoke('verify:run', { seeds }),

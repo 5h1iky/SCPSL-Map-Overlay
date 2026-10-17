@@ -317,6 +317,29 @@
     $('cr-status').textContent = `已添加「${label}」。换种子时会自动重算。`;
   }
 
+  /**
+   * v0.3.1：显示器下拉框（启动时枚举，最多几项）+ 「启动时定位一次」开关。
+   * 这里**没有**“自动跟随”选项：后台轮询正是鼠标卡顿的根因，换屏请点「定位游戏窗口」。
+   */
+  function renderDisplays(settings) {
+    const select = $('displayId');
+    if (!select) return;
+    const displays = boot?.meta?.displays ?? [];
+    const rows = ['<option value="">主显示器（默认）</option>'];
+    displays.forEach((d, index) => {
+      const name = d.primary ? `显示器 ${index + 1} · 主显示器` : `显示器 ${index + 1}`;
+      const size = `${d.width}×${d.height}`;
+      const scale = d.scaleFactor && Math.abs(d.scaleFactor - 1) > 0.01
+        ? ` @${Math.round(d.scaleFactor * 100)}%` : '';
+      rows.push(`<option value="${Number(d.id)}">${escapeHtml(name)} · ${size}${scale}</option>`);
+    });
+    select.innerHTML = rows.join('');
+    const saved = settings.overlay.displayId;
+    const wanted = saved === null || saved === undefined ? '' : String(saved);
+    select.value = displays.some((d) => String(d.id) === wanted) ? wanted : '';
+    $('probeOnStart').checked = Boolean(settings.overlay.probeOnStart);
+  }
+
   function applySettings(settings) {
     settingsCache = settings;
     $('autoStart').checked = Boolean(settings.autoStart);
@@ -335,7 +358,14 @@
     $('colorByCategory').checked = settings.overlay.colorByCategory !== false;
     $('showSurfaceBand').checked = settings.overlay.showSurfaceBand !== false;
     $('smartVisibility').checked = Boolean(settings.overlay.smartVisibility);
-    $('displayMode').value = settings.overlay.display === 'primary' ? 'primary' : 'auto';
+    renderDisplays(settings);
+    // v0.3.1：页脚显示当前应用版本（+ 运行时版本，便于反馈问题时对得上）
+    const appVersion = boot?.meta?.appVersion ?? '?';
+    const runtime = boot?.meta?.runtime ?? {};
+    const verEl = $('appVersion');
+    if (verEl) {
+      verEl.textContent = `SCPSL 地图工具 v${appVersion}${runtime.electron ? ` · Electron ${runtime.electron}` : ''}`;
+    }
     // v0.3.1：快速上手的展开/收起状态由用户决定（默认展开），下次打开保持
     const tutorialDetails = $('tutorialDetails');
     if (tutorialDetails) tutorialDetails.open = settings.tutorialOpen !== false;
@@ -430,8 +460,33 @@
     $('colorByCategory').addEventListener('change', (e) => api.intent.setOverlay({ colorByCategory: e.target.checked }));
     $('showSurfaceBand').addEventListener('change', (e) => api.intent.setOverlay({ showSurfaceBand: e.target.checked }));
     $('smartVisibility').addEventListener('change', (e) => api.intent.setOverlay({ smartVisibility: e.target.checked }));
-    $('displayMode').addEventListener('change', (e) => {
-      api.intent.setOverlay({ display: e.target.value }).then((r) => applySettings(r.settings));
+    // v0.3.1：显示器选择（纯窗口搬移，不探测）
+    $('displayId').addEventListener('change', (e) => {
+      const value = e.target.value === '' ? null : Number(e.target.value);
+      api.intent.setOverlay({ displayId: value }).then((r) => { applySettings(r.settings); applyStatus(r); });
+    });
+    $('probeOnStart').addEventListener('change', (e) => {
+      api.intent.setOverlay({ probeOnStart: e.target.checked }).then((r) => applySettings(r.settings));
+    });
+    // v0.3.1：单次探测游戏窗口所在屏（约 2–3 秒），绝不排定时器
+    $('locate-game').addEventListener('click', async () => {
+      const btn = $('locate-game');
+      const hint = $('displayHint');
+      btn.disabled = true;
+      hint.textContent = '正在探测游戏窗口（只探测这一次，约 2–3 秒）…';
+      try {
+        const r = await api.intent.locateGameDisplay();
+        if (r?.displays) boot = { ...boot, meta: { ...(boot?.meta ?? {}), displays: r.displays } };
+        if (r?.settings) applySettings(r.settings);
+        applyStatus(r);
+        hint.textContent = r?.located
+          ? `已定位到 ${r.located.label || `显示器 ${r.located.id}`}，并保存为默认显示器`
+          : '没有找到游戏窗口（游戏没开？）—— 仍使用当前选择的显示器';
+      } catch (error) {
+        hint.textContent = `定位失败：${error.message}`;
+      } finally {
+        btn.disabled = false;
+      }
     });
     $('export-png').addEventListener('click', async () => {
       // 画布在 overlay 窗口里：经主进程转告它合成（与 Ctrl+6 完全同一条路径）。

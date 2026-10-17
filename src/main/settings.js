@@ -17,10 +17,15 @@ export const DEFAULT_SETTINGS = {
     /** 相对屏幕左上角的归一化位置（0..1），默认放在屏幕中下部 */
     anchor: { x: 0.5, y: 0.62 },
     /**
-     * 覆盖层显示器（v0.3.0）：'auto' = 跟随 SCP:SL 游戏窗口所在屏（默认），
-     * 'primary' = 固定主屏（老行为）。
+     * 覆盖层显示在哪块屏（v0.3.1 重新设计）：
+     *   null  = 主显示器；数字 = Electron display.id（设置页按启动时枚举到的显示器让你选）。
+     * ⚠️ 这里故意**没有**“自动跟随”轮询：为了知道游戏在哪块屏必须定时问系统，
+     * 而每次探测要起 PowerShell + Add-Type（实测 2.1–2.4 秒），会周期性卡鼠标 / 打满磁盘。
+     * 需要换屏时用设置页的「定位游戏窗口」按钮（只探测一次），或勾选“启动时定位一次”。
      */
-    display: 'auto',
+    displayId: null,
+    /** 启动时探测一次游戏窗口所在显示器（单次；默认关） */
+    probeOnStart: false,
     visibleOnStart: false,
     showLabels: true,
     /** 重要区域（SCP / 核心 / 安保 / 检查点）按分类上色；关掉则整张图同色剪影 */
@@ -78,6 +83,17 @@ export function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, n));
 }
 
+/**
+ * v0.3.1：显示器 id 清洗。
+ * null / 空 → null（= 主显示器）；数字或数字字符串 → 整数；其它脏值 → null。
+ * Electron 在 Windows 上的 display.id 可能是个很大的整数（如 2528732444），别按 32 位截断。
+ */
+export function normalizeDisplayId(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && Number.isInteger(n) ? n : null;
+}
+
 export function normalizeSettings(input) {
   const s = mergeDefaults(DEFAULT_SETTINGS, input);
   s.overlay.opacity = clampNumber(s.overlay.opacity, 0.3, 1, DEFAULT_SETTINGS.overlay.opacity);
@@ -95,8 +111,18 @@ export function normalizeSettings(input) {
     s.seed.manualOverride = Number.isInteger(n) && n >= 1 && n <= 2147483647 ? n : null;
   }
   s.overlay.smartVisibility = Boolean(s.overlay.smartVisibility);
-  /** v0.3.0：跟随游戏窗口所在屏（auto）/ 固定主屏（primary） */
-  s.overlay.display = s.overlay.display === 'primary' ? 'primary' : 'auto';
+  /**
+   * v0.3.1：显示器模型从 'auto' | 'primary' 改成「固定 displayId + 可选启动时定位一次」。
+   * 旧配置迁移：display='auto' → 不回退轮询（那正是卡顿根因），改成“启动时定位一次”，
+   * 行为上仍然能跟到游戏窗口，但只问系统一次。
+   */
+  s.overlay.displayId = normalizeDisplayId(s.overlay.displayId);
+  s.overlay.probeOnStart = Boolean(s.overlay.probeOnStart);
+  /**
+   * 旧配置的 overlay.display（'auto' | 'primary'）**直接忽略**，不迁移成 probeOnStart：
+   * 升级后默认就是「固定主屏 + 零探测」，用户要跟游戏窗口时点一次「定位游戏窗口」即可。
+   * 绝不因为一份旧配置就在启动时自动起 PowerShell。
+   */
   s.seed.history = normalizeSeedHistory(s.seed.history);
   s.hotkeys = sanitizeHotkeys(migrateHotkeys(s.hotkeys));
   s.customRoutes = normalizeCustomRoutes(s.customRoutes);

@@ -119,11 +119,12 @@
       </div>
       <div class="row">
         <span class="label">显示器</span>
-        <select id="displayMode">
-          <option value="auto">自动跟随游戏窗口</option>
-          <option value="primary">固定在主显示器</option>
-        </select>
-        <span class="hint" id="displayHint">游戏在哪个屏，地图就跟到哪个屏</span>
+        <select id="displayId" class="grow"><option value="">主显示器</option></select>
+        <button class="btn" id="locate-game">定位游戏窗口</button>
+        <label class="inline"><input type="checkbox" id="probeOnStart" /> 启动时定位一次</label>
+      </div>
+      <div class="row">
+        <span class="hint" id="displayHint">地图固定显示在你选的屏幕；只有点「定位游戏窗口」或勾选「启动时定位一次」才会探测，后台不会轮询。</span>
       </div>
       <div class="row">
         <button class="btn primary" id="toggle-overlay">显示 / 隐藏覆盖层</button>
@@ -199,6 +200,13 @@
       </div>
     </section>
   </main>
+
+  <!-- v0.3.1：页脚显示当前应用版本（用户反馈设置页看不到"我装的是哪一版"） -->
+  <footer class="footer">
+    <span id="appVersion">SCPSL 地图工具 —</span>
+    <span class="footer-sep">·</span>
+    <span>非官方工具 · 与 Northwood Studios 无关</span>
+  </footer>
 
   <script src="settings.js"></script>
 </body>
