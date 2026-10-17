@@ -61,6 +61,12 @@
         <button class="btn" id="open-logs">打开日志目录</button>
         <span class="hint" id="store-hint"></span>
       </div>
+      <div class="row">
+        <span class="label">种子历史</span>
+        <span class="hint">最近 20 局（含来源与本局服务器），点击条目即可重新出图</span>
+        <button class="btn danger" id="clear-history">清空</button>
+      </div>
+      <div id="seedHistory" class="history"></div>
     </section>
 
     <section class="card">
@@ -79,14 +85,24 @@
       <label class="row"><input type="checkbox" id="showLabels" /> <span>显示 POI 标签</span></label>
       <label class="row"><input type="checkbox" id="colorByCategory" /> <span>重要区域按分类上色</span><em>SCP 收容 / 核心 / 安保 / 检查点 用分类色，其余用统一灰；关掉则整张图同色剪影</em></label>
       <label class="row"><input type="checkbox" id="showSurfaceBand" /> <span>全设施视图显示地表</span><em>地表只有一个房间，会以底部小条显示；隐藏后主图更大（撤线路线终点不再画出）</em></label>
+      <label class="row"><input type="checkbox" id="smartVisibility" /> <span>智能显隐</span><em>进游戏设施场景自动显示覆盖层，回主菜单自动隐藏；默认关闭，手动热键永远优先</em></label>
       <div class="row">
         <span class="label">位置</span>
         <span class="hint" id="anchorHint">—</span>
         <button class="btn" id="reset-anchor">复位到中下</button>
       </div>
       <div class="row">
+        <span class="label">显示器</span>
+        <select id="displayMode">
+          <option value="auto">自动跟随游戏窗口</option>
+          <option value="primary">固定在主显示器</option>
+        </select>
+        <span class="hint" id="displayHint">游戏在哪个屏，地图就跟到哪个屏</span>
+      </div>
+      <div class="row">
         <button class="btn primary" id="toggle-overlay">显示 / 隐藏覆盖层</button>
-        <span class="hint">热键 <code id="hk-toggle-hint">Ctrl+1</code>；编辑模式可拖动（<code id="hk-edit-hint">Ctrl+0</code>）</span>
+        <button class="btn" id="export-png">导出当前地图 PNG</button>
+        <span class="hint">热键 <code id="hk-toggle-hint">Ctrl+1</code>；编辑模式可拖动（<code id="hk-edit-hint">Ctrl+0</code>）；导出热键 <code id="hk-export-hint">Ctrl+6</code></span>
       </div>
     </section>
 

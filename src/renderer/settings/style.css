@@ -174,4 +174,31 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 }
 .logbox:empty { display: none; }
 
+/* 种子历史（v0.3.0）：横向紧凑条目，点击即重新出图 */
+.history {
+  display: grid;
+  gap: 4px;
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #0f141c;
+}
+.history:empty { display: none; }
+.history-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.history-item:hover { background: #1b2230; }
+.history-item .seed { font-weight: 700; min-width: 110px; }
+.history-item .src { color: var(--dim); font-size: 11px; min-width: 64px; }
+.history-item .srv { color: #68d6e8; font-size: 11px; min-width: 130px; }
+.history-item .at { color: var(--dim); font-size: 11px; margin-left: auto; }
+
 .hidden { display: none !important; }

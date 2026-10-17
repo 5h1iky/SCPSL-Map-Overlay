@@ -59,9 +59,15 @@ export const DEFAULT_HOTKEYS = {
   cycleScale: 'Control+4',
   rereadSeed: 'Control+5',
   editMode: 'Control+0',
+  /** v0.3.0：导出当前地图 PNG（0..5 已占用，6 空闲） */
+  exportPng: 'Control+6',
 };
 
-/** 上一版默认热键 —— 仅用于把老配置平滑迁移到新的两键默认值 */
+/**
+ * 上一版默认热键 —— 仅用于把老配置平滑迁移到新的两键默认值。
+ * ⚠️ **不含 exportPng**：v0.3.0 才有的动作，老配置里根本没有这个键。
+ * migrateHotkeys 的判定是"老六键整套仍是旧默认"，多一个键会永远判 false、迁移失效。
+ */
 export const LEGACY_HOTKEYS = {
   toggle: 'Control+Alt+1',
   cycleView: 'Control+Alt+2',
@@ -78,6 +84,7 @@ export const HOTKEY_LABEL = {
   cycleScale: '循环缩放档位',
   rereadSeed: '强制重读种子',
   editMode: '编辑模式（取消穿透）',
+  exportPng: '导出当前地图 PNG',
 };
 
 /**

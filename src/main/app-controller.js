@@ -35,6 +35,12 @@ export class AppController extends EventEmitter {
 
     this.seed = null;
     this.seedSource = null;
+    /**
+     * 当前节日（'Christmas' | 'Halloween' | 'AprilFools' | null）。
+     * v0.3.0：从日志「Holiday type:」读出，随种子一起传给生成器 ——
+     * 节日活动会改布局（vendor README），不传就会在活动期间算错图。
+     */
+    this.holiday = null;
     this.map = null;
     this.pois = [];
     this.poiStats = null;
@@ -103,20 +109,30 @@ export class AppController extends EventEmitter {
     return this.banner;
   }
 
-  /** 新种子：相同则完全不重绘（§8.2） */
-  setSeed(seed, source = 'log') {
+  /**
+   * 新种子：相同则完全不重绘（§8.2）。
+   * v0.3.0：新增 holiday 参数（日志「Holiday type:」读出）。
+   * 节日会改布局：同一颗种子 + 不同节日 = 不同的图，所以种子或节日任一变化都要重新生成。
+   */
+  setSeed(seed, source = 'log', holiday = null) {
     if (seed === null || seed === undefined) {
       this.emitStatus();
       return { changed: false, ok: false, error: '没有种子' };
     }
-    if (seed === this.seed && this.map) {
+    const normalizedHoliday = holiday === 'None' ? null : holiday;
+    const unchanged = seed === this.seed
+      && this.map
+      && (normalizedHoliday ?? null) === (this.holiday ?? null);
+    if (unchanged) {
       this.emitStatus();
       return { changed: false };
     }
+    const regenerate = this.map !== null;
     this.seed = seed;
     this.seedSource = source;
-    this.emit('seed', { seed, source, at: Date.now() });
-    const generated = this.mapService.generate(seed);
+    this.holiday = normalizedHoliday ?? null;
+    this.emit('seed', { seed, source, holiday: this.holiday, at: Date.now() });
+    const generated = this.mapService.generate(seed, this.holiday);
     if (!generated.map) {
       this.map = null;
       this.lastLayout = null;
@@ -129,8 +145,34 @@ export class AppController extends EventEmitter {
     this.pois = [];
     this.graph = null;
     this.route = null;
+    // 节日变化而种子相同时也要重算（走 rebuild 而不是 setSeed 的全流程）
     this.rebuild({ regeneratePois: true });
-    return { changed: true, ok: true, cached: generated.cached, ms: generated.ms };
+    return { changed: true, ok: true, cached: generated.cached, ms: generated.ms, regenerated: regenerate };
+  }
+
+  /** v0.3.0：节日变化（日志里「Holiday type:」更新）。种子相同也要重新生成。 */
+  setHoliday(holiday) {
+    const normalized = holiday === 'None' ? null : holiday ?? null;
+    if (normalized === (this.holiday ?? null)) return false;
+    if (this.seed === null || this.map === null) {
+      this.holiday = normalized;
+      return false;
+    }
+    this.holiday = normalized;
+    const generated = this.mapService.generate(this.seed, this.holiday);
+    if (!generated.map) {
+      this.emit('error', { code: 'GEN_FAILED', message: '节日布局生成失败', detail: generated.error });
+      this.emitStatus();
+      return false;
+    }
+    this.map = generated.map;
+    this.lastGenerateMs = generated.ms;
+    this.pois = [];
+    this.graph = null;
+    this.route = null;
+    this.rebuild({ regeneratePois: true });
+    this.logger?.info?.('节日变化，已重新生成布局', { holiday: this.holiday, seed: this.seed });
+    return true;
   }
 
   /** 重新分类 + 建图 + 选路线 + 出图 */
@@ -383,6 +425,8 @@ export class AppController extends EventEmitter {
     return {
       seed: this.seed,
       seedSource: this.seedSource,
+      /** v0.3.0：当前节日（null=无）；活动期间布局不同，UI 要能看出来 */
+      holiday: this.holiday,
       viewZone: this.viewZone,
       viewLabel: VIEW_LABEL[this.viewZone] ?? this.viewZone,
       viewShort: zoneMeta?.short ?? 'ALL',

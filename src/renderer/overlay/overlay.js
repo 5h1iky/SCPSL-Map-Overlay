@@ -20,6 +20,11 @@
   const lgHint = document.getElementById('lg-hint');
   const lgSwatches = document.getElementById('lg-swatches');
   const efHintExit = document.getElementById('ef-hint-exit');
+  const roomTip = document.getElementById('roomtip');
+  const rtTitle = document.getElementById('rt-title');
+  const rtIdentity = document.getElementById('rt-identity');
+  const rtGeo = document.getElementById('rt-geo');
+  const rtBadge = document.getElementById('rt-badge');
 
   const state = {
     layout: null,
@@ -31,6 +36,8 @@
     anchor: { x: 0.5, y: 0.62 },
     showLabels: true,
     colorByCategory: true,
+    /** v0.3.0：多显示器跟随开关（'auto' = 跟随游戏窗口） */
+    display: 'auto',
     editMode: false,
     fitHeightRatio: 0.35,
     hotkeys: null,
@@ -182,27 +189,125 @@
     errorCard.classList.add('hidden');
   }
 
-  /* ── 编辑模式：拖动 / 滚轮 ─────────────────────────────── */
+  /* ── 编辑模式：拖动 / 滚轮 / 悬停详情（v0.3.0） ───────── */
   let dragging = null;
   window.addEventListener('mousedown', (e) => {
     if (!state.editMode || e.button !== 0) return;
     dragging = { startX: e.clientX, startY: e.clientY, anchor: { ...state.anchor } };
+    hideRoomTip();
   });
   window.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    const dx = (e.clientX - dragging.startX) / state.cssWidth;
-    const dy = (e.clientY - dragging.startY) / state.cssHeight;
-    state.anchor = {
-      x: Math.min(1, Math.max(0, dragging.anchor.x + dx)),
-      y: Math.min(1, Math.max(0, dragging.anchor.y + dy)),
-    };
-    redraw();
+    if (dragging) {
+      const dx = (e.clientX - dragging.startX) / state.cssWidth;
+      const dy = (e.clientY - dragging.startY) / state.cssHeight;
+      state.anchor = {
+        x: Math.min(1, Math.max(0, dragging.anchor.x + dx)),
+        y: Math.min(1, Math.max(0, dragging.anchor.y + dy)),
+      };
+      redraw();
+      return;
+    }
+    // 编辑模式（取消穿透后）才收鼠标事件 —— 悬停显示房间详情
+    if (!state.editMode) return;
+    const hit = window.OverlayRender?.roomAt?.(e.clientX, e.clientY) ?? null;
+    if (hit) showRoomTip(hit.room, e.clientX, e.clientY);
+    else hideRoomTip();
   });
   window.addEventListener('mouseup', () => {
     if (!dragging) return;
     dragging = null;
     api?.intent?.setOverlay?.({ anchor: state.anchor });
   });
+  window.addEventListener('mouseleave', () => hideRoomTip());
+
+  /* ── v0.3.0：悬停房间详情 ───────────────────────────────────
+     数据全部来自 RenderLayout（主进程算好的），这里只做拼装：
+       · POI 标签优先（有名有姓），无名走廊退到形状描述
+       · 身份行：分区 · 形状 · prefab · 官方贴图名
+       · 几何行：房间中心（世界单位）· 连接器数
+       · 徽标：路线起点 / 终点 / 途经 */
+  const ZONE_LABEL = {
+    LightContainment: '轻收容区', HeavyContainment: '重收容区',
+    Entrance: '办公区', Surface: '地表', Other: '口袋空间',
+  };
+  const SHAPE_LABEL = {
+    Straight: '直廊', Curve: '弯角', TShape: '丁字', XShape: '十字',
+    Endroom: '端房', Undefined: '未分类',
+  };
+
+  function showRoomTip(room, mouseX, mouseY) {
+    if (!roomTip || !room) return;
+    const pois = state.layout?.pois ?? [];
+    const poi = pois.find((p) => p.roomId === room.id) ?? null;
+    rtTitle.textContent = poi?.label ?? (room.roomName !== 'Unnamed' ? room.roomName : '无名走廊');
+    const zone = ZONE_LABEL[room.zone] ?? room.zone ?? '—';
+    const shape = SHAPE_LABEL[room.shape] ?? room.shape ?? '—';
+    rtIdentity.innerHTML = `${escapeHtml(zone)} · ${escapeHtml(shape)} · <b>${escapeHtml(room.prefab || '—')}</b> · 贴图 <b>${escapeHtml(room.outline?.mapIcon ?? '无')}</b>`;
+    const connectorCount = (room.doors ?? []).length;
+    rtGeo.innerHTML = `中心 <b>${room.cx.toFixed(1)}, ${room.cy.toFixed(1)}</b> · 连接器 <b>${connectorCount}</b>`;
+    const badges = [];
+    if (room.isStart) badges.push('路线起点');
+    if (room.isEnd) badges.push('路线终点');
+    else if (room.onRoute) badges.push('路线途经');
+    rtBadge.innerHTML = badges.map((b) => `<span>${b}</span>`).join('');
+    roomTip.classList.remove('hidden');
+    // 贴边翻转，别跑出屏幕
+    const rect = roomTip.getBoundingClientRect();
+    const left = Math.min(mouseX + 16, Math.max(8, window.innerWidth - rect.width - 8));
+    const top = Math.min(mouseY + 14, Math.max(8, window.innerHeight - rect.height - 8));
+    roomTip.style.left = `${left}px`;
+    roomTip.style.top = `${top}px`;
+  }
+
+  function hideRoomTip() {
+    roomTip?.classList.add('hidden');
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  /* ── v0.3.0：导出 PNG ─────────────────────────────────────
+     面板区域（不含状态条 DOM）离屏合成 2 倍分辨率 → dataURL 交主进程存盘。 */
+  function exportCurrentPng() {
+    if (!state.layout || !state.transform) {
+      window.alert?.('还没有可导出的地图');
+      return;
+    }
+    const cv = window.OverlayRender?.composeExport?.(state.transform, state.dpr || 1);
+    if (!cv) return;
+    const status = state.status ?? {};
+    const seed = status.seed ?? 'noseed';
+    const view = status.viewZone ?? 'All';
+    const suggestedName = `scpsl-map-${seed}-${view}.png`;
+    api.app.exportPng({ dataUrl: cv.toDataURL('image/png'), suggestedName })
+      .then((result) => {
+        if (result?.ok) flashTip(`已导出 ${result.file}`);
+        else if (result?.error) flashTip(`导出失败：${result.error}`);
+      })
+      .catch((err) => flashTip(`导出失败：${err?.message ?? err}`));
+  }
+
+  /** 导出成功/失败的一瞬反馈（复用 tooltip 卡片，2.5 秒后消失） */
+  let tipFlashTimer = null;
+  function flashTip(text) {
+    if (!roomTip) return;
+    rtTitle.textContent = '导出 PNG';
+    rtIdentity.textContent = '';
+    rtGeo.textContent = text;
+    rtBadge.innerHTML = '';
+    roomTip.classList.remove('hidden');
+    roomTip.style.left = '50%';
+    roomTip.style.top = '12%';
+    roomTip.style.transform = 'translateX(-50%)';
+    clearTimeout(tipFlashTimer);
+    tipFlashTimer = setTimeout(() => {
+      roomTip.classList.add('hidden');
+      roomTip.style.transform = '';
+    }, 2500);
+  }
   window.addEventListener('wheel', (e) => {
     if (!state.editMode) return;
     api?.intent?.cycleScale?.(e.deltaY > 0 ? -1 : 1);
@@ -242,6 +347,7 @@
       state.editMode = Boolean(overlay.editMode);
       state.visible = overlay.visible ?? state.visible;
       state.fitHeightRatio = overlay.fitHeightRatio ?? state.fitHeightRatio;
+      state.display = overlay.display ?? state.display;
       if (prevScale !== state.scale) state.transform = null;
       redraw();
       renderStatus();
@@ -250,12 +356,25 @@
       if (payload?.code === 'CLEAR') clearError();
       else showError(payload);
     });
+    /** v0.3.0：热键/设置页触发的导出请求 */
+    api.onExportRequested(() => exportCurrentPng());
     api.ready();
   } else if (!isPreview) {
     showError({ title: 'preload 未加载', detail: '窗口未通过 preload 暴露 API。' });
   }
 
   window.addEventListener('resize', resize);
+
+  /**
+   * v0.3.0：DPI 变化兜底。窗口被搬到另一个缩放比不同的显示器时，
+   * Electron 有时不触发 resize —— 这里 1 秒轮询一次 devicePixelRatio，
+   * 变了就重设画布（代价极小：一次比较）。auto 模式下才有必要。
+   */
+  setInterval(() => {
+    if (state.display !== 'auto') return;
+    const dpr = window.devicePixelRatio || 1;
+    if (dpr !== state.dpr) resize();
+  }, 1000);
 
   // 房间图标是异步解码的：加载完一张就重绘一次，避免首帧空白
   window.__onIconLoaded = () => { if (state.layout) redraw(); };
@@ -282,6 +401,22 @@
       return { transform: state.transform };
     },
     ready: false,
+  };
+
+  /**
+   * v0.3.0：供 selftest 用的调试钩子（只在窗口加载后存在）。
+   * 悬停/导出的合成逻辑都在渲染进程，主进程没法直接调 —— selftest 通过它验证。
+   */
+  window.__overlayDebug = {
+    /** 悬停某屏幕坐标命中的房间（null = 没命中） */
+    hit(x, y) {
+      return window.OverlayRender?.roomAt?.(x, y)?.room ?? null;
+    },
+    /** 合成导出 canvas 并返回尺寸（不落盘） */
+    compose() {
+      const cv = window.OverlayRender?.composeExport?.(state.transform, state.dpr || 1);
+      return cv ? { width: cv.width, height: cv.height } : null;
+    },
   };
 
   resize();

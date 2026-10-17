@@ -295,6 +295,8 @@
     $('showLabels').checked = Boolean(settings.overlay.showLabels);
     $('colorByCategory').checked = settings.overlay.colorByCategory !== false;
     $('showSurfaceBand').checked = settings.overlay.showSurfaceBand !== false;
+    $('smartVisibility').checked = Boolean(settings.overlay.smartVisibility);
+    $('displayMode').value = settings.overlay.display === 'primary' ? 'primary' : 'auto';
     $('anchorHint').textContent = `x ${Number(settings.overlay.anchor.x).toFixed(2)} · y ${Number(settings.overlay.anchor.y).toFixed(2)}（编辑模式下拖动覆盖层）`;
     $('store-hint').textContent = boot?.meta?.settingsPath ? `配置：${boot.meta.settingsPath}` : '';
     if (!boot.meta?.noticeAcknowledged) $('notice').classList.remove('hidden');
@@ -302,6 +304,48 @@
     renderHotkeys(settings, hotkeyReport);
     renderPresets(settings);
     renderCustomRoutes(settings);
+    renderSeedHistory(settings.seed.history ?? []);
+  }
+
+  /**
+   * v0.3.0：种子历史列表。点击条目 = 切到那个种子重新出图
+   * （通过 intent:setSeed 走完整链路，含历史记录）。
+   */
+  function renderSeedHistory(history) {
+    const list = $('seedHistory');
+    if (!list) return;
+    list.innerHTML = '';
+    if (!Array.isArray(history) || history.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'hint';
+      empty.textContent = '还没有历史记录。每局成功算出布局后会自动记在这里（最多 20 条）。';
+      list.appendChild(empty);
+      return;
+    }
+    const srcLabel = { log: '日志', 'prev-log': '上局日志', manual: '手动', cli: 'CLI', test: '测试' };
+    for (const entry of history) {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+      item.title = '点击用这个种子重新出图';
+      item.innerHTML = `<span class="seed">${escapeHtml(String(entry.seed))}</span>`
+        + `<span class="src">${escapeHtml(srcLabel[entry.source] ?? entry.source ?? '—')}</span>`
+        + `<span class="srv">${escapeHtml(entry.server ?? '')}</span>`
+        + `<span class="at">${escapeHtml(formatHistoryTime(entry.at))}</span>`;
+      item.addEventListener('click', async () => {
+        await api.intent.setSeed(entry.seed);
+        const r = await api.app.status();
+        boot = { ...boot, ...r };
+        applyStatus(r);
+      });
+      list.appendChild(item);
+    }
+  }
+
+  function formatHistoryTime(at) {
+    if (!at) return '—';
+    const d = new Date(at);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   function bind() {
@@ -343,6 +387,30 @@
     $('showLabels').addEventListener('change', (e) => api.intent.setOverlay({ showLabels: e.target.checked }));
     $('colorByCategory').addEventListener('change', (e) => api.intent.setOverlay({ colorByCategory: e.target.checked }));
     $('showSurfaceBand').addEventListener('change', (e) => api.intent.setOverlay({ showSurfaceBand: e.target.checked }));
+    $('smartVisibility').addEventListener('change', (e) => api.intent.setOverlay({ smartVisibility: e.target.checked }));
+    $('displayMode').addEventListener('change', (e) => {
+      api.intent.setOverlay({ display: e.target.value }).then((r) => applySettings(r.settings));
+    });
+    $('export-png').addEventListener('click', async () => {
+      // 画布在 overlay 窗口里：经主进程转告它合成（与 Ctrl+6 完全同一条路径）。
+      // 覆盖层隐藏时先点亮，让用户看见导出的就是当前这张图。
+      $('export-png').disabled = true;
+      try {
+        await api.intent.setOverlay({ toggleVisible: true });
+        const result = await api.intent.exportPng();
+        if (result?.ok) {
+          const r = await api.app.status();
+          boot = { ...boot, ...r };
+          applyStatus(r);
+        }
+      } finally {
+        $('export-png').disabled = false;
+      }
+    });
+    $('clear-history').addEventListener('click', async () => {
+      const r = await api.settings.set({ seed: { history: [] } });
+      applySettings(r.settings);
+    });
     $('cr-add').addEventListener('click', addRoute);
     $('reset-anchor').addEventListener('click', () => api.intent.setOverlay({ anchor: { x: 0.5, y: 0.62 } }).then((r) => applySettings(r.settings)));
     $('toggle-overlay').addEventListener('click', () => api.intent.setOverlay({ toggleVisible: true }));

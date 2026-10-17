@@ -16,6 +16,10 @@ export const DEFAULT_SETTINGS = {
     autoFit: true,
     /** 相对屏幕左上角的归一化位置（0..1），默认放在屏幕中下部 */
     anchor: { x: 0.5, y: 0.62 },
+    /**
+     * 覆盖层显示器（v0.3.0）：'auto' = 跟随 SCP:SL 游戏窗口所在屏（默认），
+     * 'primary' = 固定主屏（老行为）。
+     */
     display: 'auto',
     visibleOnStart: false,
     showLabels: true,
@@ -23,12 +27,19 @@ export const DEFAULT_SETTINGS = {
     colorByCategory: true,
     /** 全设施视图是否显示地表（地表只有 1 个房间，显示为底部附录条） */
     showSurfaceBand: true,
+    /**
+     * 智能显隐（v0.3.0，默认**关**）：进设施场景自动显示覆盖层，回主菜单自动隐藏。
+     * 默认关是因为它"替用户做决定"；开了之后手动 Ctrl+1 仍然随时可用。
+     */
+    smartVisibility: false,
   },
   seed: {
     manualOverride: null,
     logPath: null,
     persistLastSeed: true,
     lastSeed: null,
+    /** 种子历史（v0.3.0）：[{seed, source, server, at}]，上限 20，同种子去重置顶 */
+    history: [],
   },
   presets: [...DEFAULT_VISIBLE_PRESETS],
   /** 用户自定义路线：[{id,label,from,to,enabled}]，端点是与种子无关的选择器 */
@@ -81,6 +92,10 @@ export function normalizeSettings(input) {
     const n = Number(s.seed.manualOverride);
     s.seed.manualOverride = Number.isInteger(n) && n >= 1 && n <= 2147483647 ? n : null;
   }
+  s.overlay.smartVisibility = Boolean(s.overlay.smartVisibility);
+  /** v0.3.0：跟随游戏窗口所在屏（auto）/ 固定主屏（primary） */
+  s.overlay.display = s.overlay.display === 'primary' ? 'primary' : 'auto';
+  s.seed.history = normalizeSeedHistory(s.seed.history);
   s.hotkeys = sanitizeHotkeys(migrateHotkeys(s.hotkeys));
   s.customRoutes = normalizeCustomRoutes(s.customRoutes);
   s.autoStart = Boolean(s.autoStart);
@@ -133,6 +148,42 @@ function normalizeSelector(raw) {
     if (clean.length > 0) out[field] = clean;
   }
   return Object.keys(out).length > 0 ? out : null;
+}
+
+const SEED_HISTORY_LIMIT = 20;
+
+/**
+ * 种子历史清洗（v0.3.0）：只留合法条目，同种子去重（保留最新），按时间倒序，上限 20。
+ * 脏数据（非整数种子、超长 server 字符串）直接丢，绝不进内存。
+ */
+export function normalizeSeedHistory(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Map();
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== 'object') continue;
+    const seed = Number(entry.seed);
+    if (!Number.isInteger(seed) || seed < 1 || seed > 2147483647) continue;
+    const server = typeof entry.server === 'string' && entry.server.length > 0 && entry.server.length <= 64
+      ? entry.server : null;
+    const source = typeof entry.source === 'string' && ['log', 'prev-log', 'manual', 'cli', 'test'].includes(entry.source)
+      ? entry.source : null;
+    const at = Number.isFinite(entry.at) ? entry.at : 0;
+    const prev = seen.get(seed);
+    if (prev) {
+      // 同种子 = 同一局：合并而不是覆盖，server/source 别丢（后写的优先，但空值不顶掉非空）
+      seen.set(seed, {
+        seed,
+        source: source ?? prev.source,
+        server: server ?? prev.server,
+        at: Math.max(at, prev.at),
+      });
+    } else {
+      seen.set(seed, { seed, source, server, at });
+    }
+  }
+  return [...seen.values()]
+    .sort((a, b) => b.at - a.at)
+    .slice(0, SEED_HISTORY_LIMIT);
 }
 
 /** 自定义路线的清洗：坏数据直接丢掉，绝不把脏东西带进内存 */

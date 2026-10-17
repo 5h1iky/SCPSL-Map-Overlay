@@ -207,8 +207,13 @@
    * @param {CanvasRenderingContext2D} ctx
    * @param {object} opts { layout, transform, opacity, showLabels, preview, hoverRoomId }
    */
+  /** 最近一次绘制的屏幕空间房间几何 + 变换（v0.3.0：悬停命中检测、导出合成用） */
+  let lastRoomGeom = [];
+  let lastTransform = null;
+
   function draw(ctx, opts) {
     const { layout, transform: t, opacity = 0.75, showLabels = true, preview = false } = opts;
+    lastTransform = t;
     ctx.save();
     ctx.setTransform(opts.dpr || 1, 0, 0, opts.dpr || 1, 0, 0);
     ctx.clearRect(0, 0, t.cssWidth, t.cssHeight);
@@ -646,6 +651,60 @@
 
     ctx.restore();
     ctx.restore();
+
+    // v0.3.0：把屏幕空间几何存下来，供悬停命中检测（overlay.js 的 roomAt）与导出合成用
+    lastRoomGeom = roomGeom.filter(Boolean);
+  }
+
+  /**
+   * v0.3.0：命中检测 —— 屏幕坐标（CSS 像素）落在哪个房间里。
+   * 取**最上面**命中的房间（数组后面的后画，视觉上在上层）。
+   * @param {number} x 屏幕 X（CSS 像素）
+   * @param {number} y 屏幕 Y（CSS 像素）
+   * @returns {{room: object, cx:number, cy:number, w:number, h:number}|null}
+   */
+  function roomAt(x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    for (let i = lastRoomGeom.length - 1; i >= 0; i -= 1) {
+      const g = lastRoomGeom[i];
+      if (!g || !Number.isFinite(g.x)) continue;
+      if (x >= g.x && x <= g.x + g.w && y >= g.y && y <= g.y + g.h) {
+        return { room: g.room, cx: g.cx, cy: g.cy, w: g.w, h: g.h };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * v0.3.0：导出合成 —— 面板区域离屏 canvas（2 倍分辨率），
+   * 不含状态条（那是 DOM）。透明区域垫上深色底，跟覆盖层视觉一致。
+   * @param {object} t computeTransform 的返回值
+   * @param {number} dpr 设备像素比
+   * @returns {HTMLCanvasElement|null}
+   */
+  function composeExport(t, dpr = 1) {
+    if (!t) return null;
+    const scale = 2; // 2 倍超采样，PNG 放大也清晰
+    const w = Math.max(1, Math.round(t.panelW * scale));
+    const h = Math.max(1, Math.round(t.panelH * scale));
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    const c2 = cv.getContext('2d');
+    c2.fillStyle = '#0d1015'; // 覆盖层窗口底色（窗口本身全透明，这里垫一层深色）
+    c2.fillRect(0, 0, w, h);
+    c2.drawImage(
+      document.getElementById('map'),
+      Math.round(t.panelX * dpr), Math.round(t.panelY * dpr),
+      Math.round(t.panelW * dpr), Math.round(t.panelH * dpr),
+      0, 0, w, h,
+    );
+    return cv;
+  }
+
+  /** v0.3.0：当前布局/变换的只读快照（悬停、导出、selftest 都用） */
+  function lastDrawState() {
+    return { transform: lastTransform, roomCount: lastRoomGeom.length };
   }
 
   /** 贴图是否已全部解码完（决定能否走"离屏合并"路径）。
@@ -669,6 +728,7 @@
 
   window.OverlayRender = {
     draw, computeTransform, toScreen, chip, roundRect, wallRuns, loadIcons, iconsStatus,
+    roomAt, composeExport, lastDrawState,
     C, FONT, PAD,
   };
 })();

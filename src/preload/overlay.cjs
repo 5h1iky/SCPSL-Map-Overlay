@@ -1,7 +1,7 @@
 /* preload：唯一出口，白名单 API（§5.2 / §7）。CJS 以兼容 sandbox。 */
 const { contextBridge, ipcRenderer } = require('electron');
 
-const M_TO_R = ['app:status', 'seed:changed', 'layout:ready', 'layout:error', 'route:changed', 'overlay:state', 'hotkey:conflict', 'log:line'];
+const M_TO_R = ['app:status', 'seed:changed', 'layout:ready', 'layout:error', 'route:changed', 'overlay:state', 'hotkey:conflict', 'log:line', 'export:requested'];
 
 function subscribe(channel, callback) {
   if (!M_TO_R.includes(channel)) throw new Error(`未允许订阅的 channel: ${channel}`);
@@ -20,6 +20,8 @@ const api = {
   onError: (cb) => subscribe('layout:error', cb),
   onHotkeyConflict: (cb) => subscribe('hotkey:conflict', cb),
   onLogLine: (cb) => subscribe('log:line', cb),
+  /** v0.3.0：主进程请求导出 PNG（热键/设置页按钮触发） */
+  onExportRequested: (cb) => subscribe('export:requested', cb),
   intent: {
     setView: (zone) => ipcRenderer.invoke('intent:setView', { zone }),
     cycleView: (direction = 1) => ipcRenderer.invoke('intent:cycleView', { direction }),
@@ -32,6 +34,7 @@ const api = {
     setOverlay: (patch) => ipcRenderer.invoke('intent:setOverlay', patch),
     setCapture: (enabled) => ipcRenderer.invoke('intent:setCapture', { enabled }),
     captureKey: (ev) => ipcRenderer.invoke('intent:captureKey', ev),
+    exportPng: () => ipcRenderer.invoke('intent:exportPng', {}),
     listPois: () => ipcRenderer.invoke('intent:listPois', {}),
     setPresets: (presets) => ipcRenderer.invoke('intent:setPresets', { presets }),
     verifyRun: (seeds) => ipcRenderer.invoke('verify:run', { seeds }),
@@ -48,6 +51,8 @@ const api = {
     pickLogFile: () => ipcRenderer.invoke('app:pickLogFile'),
     openSettings: () => ipcRenderer.invoke('app:openSettings'),
     setAutoStart: (enabled) => ipcRenderer.invoke('app:setAutoStart', { enabled }),
+    /** v0.3.0：把渲染进程合成的 PNG dataURL 交给主进程存盘 */
+    exportPng: (payload) => ipcRenderer.invoke('app:exportPng', payload ?? {}),
   },
 };
 

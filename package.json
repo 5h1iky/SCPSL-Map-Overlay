@@ -1,6 +1,6 @@
 {
   "name": "scpsl-map-overlay",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "SCP: Secret Laboratory 离线地图覆盖层：读 Player.log 取种子，离线推算设施布局并以置顶透明穿透窗口显示。",
   "author": "5h1iky",
   "repository": {
@@ -15,7 +15,7 @@
     "cli": "node tools/cli.mjs",
     "preview": "electron tools/render-preview.mjs",
     "icon": "electron tools/make-icon.mjs",
-    "test": "node --test test/",
+    "test": "node --test",
     "verify": "node test/verify-seed.mjs",
     "dist": "electron-builder --win --publish never"
   },

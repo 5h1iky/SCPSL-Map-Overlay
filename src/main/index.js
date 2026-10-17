@@ -2,19 +2,31 @@
  * Electron 主进程：应用生命周期、窗口、托盘、单实例锁、IPC（§8.1 / §15.1）。
  *
  * 分工原则（§5.2）：一切计算在主进程；渲染进程只收渲染就绪数据、只发 intent。
+ *
+ * ⚠️ electron 用**动态导入**：Electron 38 + Node 22 下内置 'electron' 是运行时构造的 CJS，
+ * Node 的 cjs-module-lexer 静态分析不出命名导出，`import { app } from 'electron'` 直接
+ * SyntaxError（2026-10-17 实测 `does not provide an export named 'BrowserWindow'`）。
+ * 顶层 await 动态 import() 拿 default —— ESM 文档推荐模式，副作用仍先于 ready 事件。
  */
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, Tray, dialog, nativeImage, screen, shell } from 'electron';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+const electron = await import('electron');
+const {
+  app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, Tray,
+  dialog, nativeImage, screen, shell, desktopCapturer,
+} = electron.default;
+
 import { AppController } from './app-controller.js';
 import { Logger } from './logger.js';
 import { Settings } from './settings.js';
-import { SeedWatcher, defaultPlayerLogPath, validateSeed } from './seed-watcher.js';
+import { LogWatcher, defaultPlayerLogPath, validateSeed, prevLogPathFor } from './log-watcher.js';
 import { readGameVersion, serverLogsRoot } from './version-guard.js';
 import { detectConflicts, readGameBindings, registerHotkeys, defaultGameConfigDir, captureAccelerator } from './hotkeys.js';
 import { HOTKEY_LABEL, ROUTE_PRESETS, STYLE, VIEW_LABEL } from '../shared/constants.js';
 import { runVerify } from './verifier.js';
 import { scheduleSelftest, selftestRequested } from './selftest.js';
+import { findGameDisplay } from './game-window-finder.js';
 
 /*
  * ⚠️ 启动前提：本机（装了 360 主动防御 ZhuDongFangYu）Chromium 沙箱起不来。
@@ -100,9 +112,15 @@ function broadcastStatus() {
 }
 
 /* ── 窗口 ────────────────────────────────────────────────── */
+/** 覆盖层当前所在的显示器 id（v0.3.0 多显示器跟随用；null = 还没决定） */
+let currentDisplayId = null;
+/** 多显示器轮询定时器（只在 display 设置 = 'auto' 时启用） */
+let displayFollowTimer = null;
+
 function createOverlayWindow() {
   const display = screen.getPrimaryDisplay();
   const { x, y, width, height } = display.bounds;
+  currentDisplayId = String(display.id);
   overlayWindow = new BrowserWindow({
     x,
     y,
@@ -143,6 +161,55 @@ function createOverlayWindow() {
   return overlayWindow;
 }
 
+/**
+ * v0.3.0：把覆盖层移到指定显示器（游戏窗口所在屏）。
+ * 单显示器 / 同一个屏 / 找不到游戏 → 什么都不做（不乱跳）。
+ */
+async function followGameDisplay({ force = false } = {}) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return null;
+  if (settings.data.overlay.display !== 'auto' && !force) return null;
+  try {
+    const found = await findGameDisplay();
+    if (!found) return null;
+    const targetId = String(found.display.id);
+    if (targetId === currentDisplayId) return null;
+    const { x, y, width, height } = found.display.bounds;
+    overlayWindow.setBounds({ x, y, width, height });
+    currentDisplayId = targetId;
+    logger?.info?.('覆盖层跟随游戏窗口换屏', { displayId: targetId, label: found.display.label });
+    // 换屏后 DPI 可能不同：让渲染进程重新量一次（overlay.js 的 dpr 轮询兜底）
+    pushOverlayState();
+    return found.display;
+  } catch (error) {
+    logger?.warn?.('跟随游戏显示器失败', { error: error.message });
+    return null;
+  }
+}
+
+/** 启动/关闭多显示器跟随轮询（设置里的 display 开关） */
+function wireDisplayFollow() {
+  if (displayFollowTimer) {
+    clearInterval(displayFollowTimer);
+    displayFollowTimer = null;
+  }
+  if (settings.data.overlay.display !== 'auto') return;
+  // 3 秒一次：窗口枚举是系统级查询，不宜更频；游戏切换显示器是低频事件
+  displayFollowTimer = setInterval(() => { followGameDisplay(); }, 3000);
+  displayFollowTimer.unref?.();
+  // 显示器热插拔 / 分辨率变化也触发一次
+  screen.on('display-metrics-changed', () => { followGameDisplay(); });
+}
+
+/** 切回 primary 模式：把覆盖层移回主屏（用户显式选的固定行为） */
+function resetOverlayToPrimary() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  const display = screen.getPrimaryDisplay();
+  const { x, y, width, height } = display.bounds;
+  overlayWindow.setBounds({ x, y, width, height });
+  currentDisplayId = String(display.id);
+  pushOverlayState();
+}
+
 function overlayState() {
   return {
     visible: overlayWindow ? overlayWindow.isVisible() : false,
@@ -154,6 +221,8 @@ function overlayState() {
     showLabels: settings.data.overlay.showLabels,
     /** 重要区域按分类上色（关掉 = 整张图同色剪影） */
     colorByCategory: settings.data.overlay.colorByCategory,
+    /** v0.3.0：多显示器跟随开关（渲染端据此决定是否监听 dpr 变化） */
+    display: settings.data.overlay.display,
     editMode,
     fitHeightRatio: STYLE.fitHeightRatio,
   };
@@ -222,13 +291,32 @@ function setEditMode(enabled) {
 }
 
 /* ── 种子流水线 ──────────────────────────────────────────── */
-function handleSeed(seed, source) {
+/**
+ * v0.3.0：种子历史（设置里 seed.history，上限 20，同种子去重置顶）。
+ * 与日志/手动来源无关，只要成功算出布局就记一笔。
+ */
+function recordSeedHistory(seed, source, server = null) {
+  if (!settings?.data?.seed) return;
+  const list = [...(settings.data.seed.history ?? [])];
+  const entry = { seed, source, server, at: Date.now() };
+  const rest = list.filter((e) => e?.seed !== seed);
+  settings.patch('seed.history', [entry, ...rest].slice(0, 20));
+}
+
+function handleSeed(seed, source, { holiday = null } = {}) {
   if (!seed) return { ok: false, changed: false, error: '没有可用的种子' };
-  const result = controller.setSeed(seed, source);
+  const result = controller.setSeed(seed, source, holiday);
   if (result.ok) {
-    logger.info('种子已切换', { seed, source, ms: result.ms, cached: result.cached });
-    broadcast('seed:changed', { seed, source, at: Date.now() });
+    logger.info('种子已切换', { seed, source, holiday: holiday ?? 'None', ms: result.ms, cached: result.cached });
+    broadcast('seed:changed', { seed, source, holiday: holiday ?? null, at: Date.now() });
+    // v0.3.0 行为修正：日志出现新种子 = 用户已经在玩新的一局，
+    // 旧的手动固定值不再有意义（留着它会让下次启动回到过时布局）→ 自动清除。
+    if (source !== 'manual' && settings.data.seed.manualOverride) {
+      settings.patch('seed.manualOverride', null);
+      logger.info('日志出现新种子，已清除过时的手动固定种子');
+    }
     if (settings.data.seed.persistLastSeed) settings.patch('seed.lastSeed', seed);
+    recordSeedHistory(seed, source, watcher?.signals?.server ?? null);
   } else {
     broadcast('layout:error', { code: 'GEN_FAILED', message: '布局生成失败', detail: result.error });
   }
@@ -256,15 +344,30 @@ function refreshTrayMenu() {
   if (!tray) return;
   const status = controller.status();
   const seed = status.seed ?? '—';
+  // v0.3.0：最近种子子菜单（top 5，点击即切）
+  const history = (settings.data.seed.history ?? []).slice(0, 5);
+  const seedHistoryMenu = history.length > 0
+    ? [
+      { label: '最近的种子', enabled: false },
+      ...history.map((entry) => ({
+        label: `${entry.seed}${entry.server ? `（${entry.server}）` : ''}`,
+        click: () => handleSeed(entry.seed, 'manual', { holiday: watcher?.signals?.holiday ?? null }),
+      })),
+    ]
+    : [{ label: '最近的种子（空）', enabled: false }];
   const menu = Menu.buildFromTemplate([
     { label: `显示 / 隐藏覆盖层${settings.data.hotkeys.toggle ? `（${settings.data.hotkeys.toggle}）` : ''}`, click: () => toggleOverlay() },
     { label: `当前种子：${seed}（点击复制）`, click: () => { if (status.seed) clipboard.writeText(String(status.seed)); } },
+    { label: `本局服务器：${watcher?.signals?.server ?? '—'}`, enabled: false },
+    { label: `场景：${watcher?.signals?.scene === 'Facility' ? '🎮 游戏进行中' : watcher?.signals?.scene === 'NewMainMenu' ? '🏠 主菜单' : '—'}`, enabled: false },
+    ...seedHistoryMenu,
     { type: 'separator' },
     { label: `视图：${VIEW_LABEL[status.viewZone] ?? status.viewZone}`, enabled: false },
     { label: `路线：${status.route?.presetLabel ?? '无'}`, enabled: false },
     { type: 'separator' },
     { label: '设置…', click: () => showSettingsWindow() },
     { label: '重新读取种子', click: () => { watcher?.readNow({ force: true }); } },
+    { label: '导出当前地图 PNG', click: () => requestExportPng() },
     { label: '编辑模式（取消鼠标穿透）', type: 'checkbox', checked: editMode, click: (item) => setEditMode(item.checked) },
     { type: 'separator' },
     { label: '退出', click: () => { app.isQuitting = true; app.quit(); } },
@@ -339,7 +442,7 @@ function registerIpc() {
     const value = validateSeed(seed);
     if (!value) return { ...statusPayload(), error: '种子必须是 1 – 2147483647 的整数' };
     settings.patch('seed.manualOverride', value);
-    handleSeed(value, 'manual');
+    handleSeed(value, 'manual', { holiday: watcher?.signals?.holiday ?? null });
     return statusPayload();
   });
   ipcMain.handle('intent:rereadSeed', () => {
@@ -352,6 +455,7 @@ function registerIpc() {
     if (patch.autoFit !== undefined) settings.patch('overlay.autoFit', patch.autoFit);
     if (patch.showLabels !== undefined) settings.patch('overlay.showLabels', patch.showLabels);
     if (patch.colorByCategory !== undefined) settings.patch('overlay.colorByCategory', patch.colorByCategory);
+    if (patch.smartVisibility !== undefined) settings.patch('overlay.smartVisibility', Boolean(patch.smartVisibility));
     const bandChanged = patch.showSurfaceBand !== undefined
       && Boolean(patch.showSurfaceBand) !== settings.data.overlay.showSurfaceBand;
     if (patch.showSurfaceBand !== undefined) settings.patch('overlay.showSurfaceBand', Boolean(patch.showSurfaceBand));
@@ -360,6 +464,12 @@ function registerIpc() {
     if (patch.editMode !== undefined) setEditMode(patch.editMode);
     // 全设施视图的地表开关会影响分带排布 → 重新出图
     if (bandChanged) controller.buildLayoutNow();
+    // 显示器跟随开关变了 → 起停轮询（primary 模式立即换回主屏）
+    if (patch.display !== undefined && patch.display !== settings.data.overlay.display) {
+      settings.patch('overlay.display', patch.display === 'primary' ? 'primary' : 'auto');
+      wireDisplayFollow();
+      if (patch.display === 'primary') resetOverlayToPrimary();
+    }
     pushOverlayState();
     return { settings: settings.data, ...statusPayload() };
   });
@@ -376,6 +486,8 @@ function registerIpc() {
 
   /** 热键录入：把一次按键翻译成 accelerator（判定逻辑在 hotkeys.js，可单测） */
   ipcMain.handle('intent:captureKey', (_event, ev) => captureAccelerator(ev ?? {}));
+  /** v0.3.0：设置页的「导出 PNG」按钮 —— 转告 overlay 渲染进程去合成（与热键同路） */
+  ipcMain.handle('intent:exportPng', () => { requestExportPng(); return { ok: true }; });
   ipcMain.handle('intent:setPresets', (_event, { presets }) => {
     settings.patch('presets', Array.isArray(presets) && presets.length > 0 ? presets : settings.defaults.presets);
     return { settings: settings.data, ...statusPayload() };
@@ -400,6 +512,35 @@ function registerIpc() {
     });
     return result.canceled ? null : result.filePaths[0];
   });
+
+  /**
+   * v0.3.0 导出 PNG：渲染进程把主画布 + 状态条合成 dataURL 传上来，主进程负责
+   * 「存哪」（保存对话框 + 落盘）。文件名带种子/视图/日期，方便分享时对得上局。
+   */
+  ipcMain.handle('app:exportPng', async (_event, { dataUrl, suggestedName } = {}) => {
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) {
+      return { ok: false, error: '渲染进程没有给出有效的 PNG 数据' };
+    }
+    const status = controller.status();
+    const defaultName = suggestedName
+      || `scpsl-map-${status.seed ?? 'noseed'}-${status.viewZone ?? 'All'}-${new Date().toISOString().slice(0, 10)}.png`;
+    const result = await dialog.showSaveDialog(settingsWindow ?? overlayWindow ?? null, {
+      title: '导出地图 PNG',
+      defaultPath: join(app.getPath('pictures') || app.getPath('home'), defaultName),
+      filters: [{ name: 'PNG 图片', extensions: ['png'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    try {
+      const buffer = Buffer.from(dataUrl.split(',')[1], 'base64');
+      writeFileSync(result.filePath, buffer);
+      logger.info('导出 PNG', { file: result.filePath, bytes: buffer.length });
+      return { ok: true, file: result.filePath, bytes: buffer.length };
+    } catch (error) {
+      logger.warn('导出 PNG 失败', { error: error.message });
+      return { ok: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('app:openSettings', () => { showSettingsWindow(); });
   ipcMain.handle('app:setAutoStart', (_event, { enabled }) => {
     settings.patch('autoStart', Boolean(enabled));
@@ -431,6 +572,19 @@ function applySettingsSideEffects() {
 }
 
 /* ── 热键 ────────────────────────────────────────────────── */
+/**
+ * v0.3.0：触发热键导出。主进程发 `export:requested`，overlay 渲染进程合成
+ * 面板区域的 dataURL 回传（走 app:exportPng handler 落盘）。
+ * 覆盖层隐藏时也能导（用离屏数据合成），但窗口不存在就无能为力。
+ */
+function requestExportPng() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) {
+    logger?.warn('导出失败：覆盖层窗口不存在');
+    return;
+  }
+  overlayWindow.webContents.send('export:requested');
+}
+
 function wireHotkeys() {
   const bindings = readGameBindings(defaultGameConfigDir());
   const conflicts = detectConflicts(settings.data.hotkeys, bindings);
@@ -444,6 +598,7 @@ function wireHotkeys() {
       cycleScale: () => { controller.cycleScale(1); pushOverlayState(); },
       rereadSeed: () => { watcher.readNow({ force: true }); },
       editMode: () => setEditMode(!editMode),
+      exportPng: () => requestExportPng(),
     },
     logger,
   });
@@ -489,18 +644,39 @@ async function bootstrap() {
   buildTray();
   registerIpc();
   wireHotkeys();
+  wireDisplayFollow();
 
-  watcher = new SeedWatcher({ logPath: settings.data.seed.logPath || defaultPlayerLogPath() });
-  watcher.on('seed', ({ seed, source }) => handleSeed(seed, source));
+  watcher = new LogWatcher({ logPath: settings.data.seed.logPath || defaultPlayerLogPath() });
+  watcher.on('seed', ({ seed, source }) => handleSeed(seed, source, { holiday: watcher.signals.holiday }));
+  watcher.on('holiday', ({ holiday }) => {
+    // 节日活动会改布局：种子不变也要重新生成（app-controller.setHoliday）
+    const changed = controller.setHoliday(holiday);
+    if (changed) broadcast('layout:ready', controller.lastLayout);
+    broadcastStatus();
+  });
+  watcher.on('scene', ({ scene, inGame }) => {
+    logger.info('场景切换', { scene, inGame });
+    // 智能显隐（v0.3.0，默认关）：进设施自动亮覆盖层，回主菜单自动隐藏。
+    // 用户没开这个开关时不做任何事 —— 手动 Ctrl+1 永远优先。
+    if (settings.data.overlay.smartVisibility && overlayWindow) {
+      if (inGame && !overlayWindow.isVisible()) setOverlayVisible(true);
+      else if (!inGame && overlayWindow.isVisible()) setOverlayVisible(false);
+    }
+    broadcastStatus();
+  });
+  watcher.on('server', ({ server }) => {
+    logger.info('本局服务器', { server });
+    broadcastStatus();
+  });
   watcher.on('status', () => broadcastStatus());
   watcher.start();
-  logger.info('SeedWatcher 启动', watcher.status());
+  logger.info('LogWatcher 启动', watcher.status());
 
   if (settings.data.seed.manualOverride) {
-    handleSeed(settings.data.seed.manualOverride, 'manual');
+    handleSeed(settings.data.seed.manualOverride, 'manual', { holiday: watcher.signals.holiday });
   } else {
     const seed = watcher.tick();
-    if (seed) handleSeed(seed, 'log');
+    if (seed) handleSeed(seed, watcher.seedSource ?? 'log', { holiday: watcher.signals.holiday });
   }
 
   if (settings.data.overlay.visibleOnStart) setOverlayVisible(true);
