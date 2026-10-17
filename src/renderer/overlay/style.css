@@ -63,6 +63,14 @@ body.preview { background: #0b0d12; }
 }
 .statusbar .sb-dot { color: #4b5563; flex: 0 0 auto; }
 .statusbar .sb-seed { color: #ffd400; font-weight: 600; flex: 0 0 auto; }
+/* v0.3.1：种子来自上一局日志时变琥珀色，提醒「本局还没敲 seed」 */
+.statusbar .sb-seed.prev { color: #ffb020; }
+/* v0.3.1：游戏状态（● 设施中 · ip:port · 圣诞活动） */
+.statusbar .sb-game { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #9aa6b8; }
+.statusbar .sb-game.in-game { color: #7ee0a8; }
+.statusbar .sb-game.menu { color: #8a93a3; }
+.statusbar .sb-game.loading { color: #ffd400; }
+.statusbar .sb-game.unknown { color: #6b7280; }
 .statusbar .sb-view { color: #8fd3ff; flex: 0 0 auto; }
 .statusbar .sb-route { color: #cfd6e0; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .statusbar .sb-spacer { flex: 1 1 auto; min-width: 0; }

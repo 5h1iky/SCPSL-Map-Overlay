@@ -7,6 +7,10 @@
   let boot = null;      // app:getStatus 的返回
   let hotkeyReport = {};
 
+  /** 快速上手标题行的两种文案（只有这两条常量会走 innerHTML，不含用户数据） */
+  const TUT_CORE_NORMAL = '每开新一局，都要在游戏里重新敲一次 <code>seed</code>';
+  const TUT_CORE_WARN = '本局还没读到种子 —— 进游戏敲一次 <code>seed</code>';
+
   /** 自定义路线的名称来自用户输入，插入 DOM 前必须转义 */
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -19,8 +23,8 @@
     if (payload.hotkeyReport) hotkeyReport = payload.hotkeyReport;
     if (payload.watcher) boot.watcher = payload.watcher;
 
-    $('pill-seed').textContent = `种子 ${status.seed ?? '—'}`;
-    $('pill-seed').className = `pill ${status.seed ? 'ok' : ''}`;
+    $('pill-seed').textContent = `种子 ${status.seed ?? '—'}${status.seedSource === 'prev-log' ? '（上一局）' : ''}`;
+    $('pill-seed').className = `pill ${status.seed ? (status.seedSource === 'prev-log' ? 'warn' : 'ok') : ''}`;
     const v = status.version ?? {};
     $('pill-version').textContent = `游戏 ${v.game ?? '?'} · 模板 ${v.template ?? '?'}`;
     $('pill-version').className = `pill ${v.match ? 'ok' : v.game ? 'warn' : ''}`;
@@ -28,6 +32,7 @@
     const watcherText = w.exists === false ? '日志未找到' : w.state === 'degraded' ? '读取异常' : '监听中';
     $('pill-watcher').textContent = `${watcherText} · ${status.seedSource ?? '-'}`;
     $('pill-watcher').className = `pill ${w.exists === false ? 'err' : 'ok'}`;
+    renderTutorialLive(status);
 
     $('v-game').textContent = `${v.game ?? '—'}（${v.gameSource ?? '-'}）`;
     $('v-template').textContent = v.template ?? '—';
@@ -45,8 +50,42 @@
       $('hk-toggle-hint').textContent = status.hotkeys.toggle || '未设置';
       $('hk-edit-hint').textContent = status.hotkeys.editMode || '未设置';
       $('hk-route-hint').textContent = status.hotkeys.cycleRoute || '未设置';
+      // v0.3.1：教程里也显示当前热键（用户改过之后不会对不上）
+      const tutToggle = $('tut-hk-toggle');
+      if (tutToggle) {
+        tutToggle.textContent = status.hotkeys.toggle || '未设置';
+        $('tut-hk-view').textContent = status.hotkeys.cycleView || '未设置';
+        $('tut-hk-route').textContent = status.hotkeys.cycleRoute || '未设置';
+        $('tut-hk-edit').textContent = status.hotkeys.editMode || '未设置';
+      }
     }
     if (status.viewLabel) $('subtitle').textContent = `离线地图覆盖层 · 当前视图 ${status.viewLabel} · 不读内存 · 不注入 · 不模拟操作`;
+  }
+
+  /**
+   * v0.3.1：快速上手卡的实时状态。
+   * 卡片可收起，但摘要行常驻；needsSeed（没种子 / 只有上一局种子）时自动变琥珀 + ⚠。
+   */
+  function renderTutorialLive(status) {
+    const live = $('tutLive');
+    const core = $('tutCore');
+    const card = $('tutorial');
+    if (!live || !core || !card) return;
+    const session = status?.session ?? null;
+    if (!session) {
+      live.textContent = '当前：等待主进程状态…';
+      live.className = 'tut-live';
+      return;
+    }
+    const needs = Boolean(session.needsSeed);
+    card.classList.toggle('needs-seed', needs);
+    core.innerHTML = needs ? TUT_CORE_WARN : TUT_CORE_NORMAL;
+    const bits = [`种子 ${session.seed ?? '—'}${session.seedSource === 'prev-log' ? '（上一局）' : ''}`];
+    if (session.scene) bits.push(`场景 ${session.sceneLabel}`);
+    if (session.server) bits.push(`服务器 ${session.server}`);
+    if (session.holidayLabel) bits.push(session.holidayLabel);
+    live.textContent = `当前：${bits.join(' · ')}${session.needSeedHint ? ` —— ${session.needSeedHint}` : ''}`;
+    live.className = `tut-live ${needs ? 'warn' : 'ok'}`;
   }
 
   function renderHotkeys(settings, report) {
@@ -297,6 +336,9 @@
     $('showSurfaceBand').checked = settings.overlay.showSurfaceBand !== false;
     $('smartVisibility').checked = Boolean(settings.overlay.smartVisibility);
     $('displayMode').value = settings.overlay.display === 'primary' ? 'primary' : 'auto';
+    // v0.3.1：快速上手的展开/收起状态由用户决定（默认展开），下次打开保持
+    const tutorialDetails = $('tutorialDetails');
+    if (tutorialDetails) tutorialDetails.open = settings.tutorialOpen !== false;
     $('anchorHint').textContent = `x ${Number(settings.overlay.anchor.x).toFixed(2)} · y ${Number(settings.overlay.anchor.y).toFixed(2)}（编辑模式下拖动覆盖层）`;
     $('store-hint').textContent = boot?.meta?.settingsPath ? `配置：${boot.meta.settingsPath}` : '';
     if (!boot.meta?.noticeAcknowledged) $('notice').classList.remove('hidden');
@@ -429,6 +471,25 @@
       $('verifyOut').textContent = typeof r === 'string' ? r : JSON.stringify(r, null, 2);
     });
     $('open-readme').addEventListener('click', () => api.intent.openExternal('README.md'));
+    // v0.3.1：仓库地址由主进程 meta 下发（白名单校验也在主进程）
+    $('open-github').addEventListener('click', () => {
+      const url = boot?.meta?.repoUrl;
+      if (url) api.intent.openExternal(url);
+    });
+    // v0.3.1：教程收起状态落盘（在 details 翻转之后读 open）
+    const tutorialDetails = $('tutorialDetails');
+    if (tutorialDetails) {
+      tutorialDetails.querySelector('summary').addEventListener('click', () => {
+        setTimeout(() => { api.settings.set({ tutorialOpen: tutorialDetails.open }); }, 0);
+      });
+    }
+    $('open-tutorial').addEventListener('click', () => {
+      if (tutorialDetails) tutorialDetails.open = true;
+      $('tutorial').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      api.settings.set({ tutorialOpen: true });
+    });
+    $('tut-reread').addEventListener('click', () => api.intent.rereadSeed().then(applyStatus));
+    $('tut-readme').addEventListener('click', () => api.intent.openExternal('README.md'));
     $('quit').addEventListener('click', () => api.app.quit());
 
     api.onStatus((payload) => { if (payload?.status) applyStatus(payload); boot = { ...boot, ...payload }; });

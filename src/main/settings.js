@@ -48,6 +48,8 @@ export const DEFAULT_SETTINGS = {
   autoStart: false,
   logLevel: 'info',
   noticeAcknowledged: false,
+  /** v0.3.1：设置页「快速上手」是否展开（可收起，收起后摘要行仍常驻提醒） */
+  tutorialOpen: true,
 };
 
 function isPlainObject(value) {
@@ -100,6 +102,7 @@ export function normalizeSettings(input) {
   s.customRoutes = normalizeCustomRoutes(s.customRoutes);
   s.autoStart = Boolean(s.autoStart);
   s.noticeAcknowledged = Boolean(s.noticeAcknowledged);
+  s.tutorialOpen = s.tutorialOpen !== false;
   return s;
 }
 

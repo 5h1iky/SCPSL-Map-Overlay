@@ -52,6 +52,14 @@ body {
 .pill.ok { color: var(--ok); border-color: #1e3a2a; }
 .pill.warn { color: var(--warn); border-color: #3a2f16; }
 .pill.err { color: var(--err); border-color: #3a1e1e; }
+/* v0.3.1：顶栏「使用教程」入口（按钮外观做成 pill，避免多一行占位） */
+.pill-btn {
+  cursor: pointer;
+  font-family: var(--font);
+  color: var(--accent2);
+  border-color: #26405e;
+}
+.pill-btn:hover { background: #1f2b3d; border-color: #3f6a9c; }
 
 main { padding: 16px 18px 40px; display: grid; gap: 14px; max-width: 1080px; }
 
@@ -202,3 +210,54 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 .history-item .at { color: var(--dim); font-size: 11px; margin-left: auto; }
 
 .hidden { display: none !important; }
+
+/* ── v0.3.1 快速上手 ───────────────────────────────────────
+   设计意图（用户反馈"不可关不行"）：
+   · 可收起，收起状态存进设置，下次还是收起的；
+   · 但 <summary> 常驻一行，始终能看见「每开一局重敲 seed」；
+   · 本局还没读到种子时，整卡变琥珀、标题行变 ⚠ 文案 —— 该提醒时自动提醒，不打扰正常状态。 */
+.tutorial {
+  background: linear-gradient(180deg, #1a1a12, #151a22);
+  border-color: #3a3418;
+}
+.tutorial.needs-seed {
+  background: linear-gradient(180deg, #241a06, #151a22);
+  border-color: #6b4a10;
+}
+.tutorial summary {
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.tutorial summary::-webkit-details-marker { display: none; }
+.tut-title {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.6px;
+  flex: 0 0 auto;
+}
+.tut-core { color: var(--accent); font-weight: 700; flex: 1 1 auto; min-width: 0; }
+.tutorial.needs-seed .tut-core { color: var(--warn); }
+.tutorial.needs-seed .tut-core::before { content: '⚠ '; }
+.tut-chev { color: var(--dim); font-size: 11px; flex: 0 0 auto; }
+.tut-chev::before { content: '展开 ▾'; }
+.tutorial details[open] .tut-chev::before { content: '收起 ▴'; }
+.tut-body { margin-top: 10px; }
+.tut-steps { margin: 0 0 10px; padding-left: 22px; }
+.tut-steps li { margin: 5px 0; }
+.tut-steps code, .tut-core code { background: #0f141c; padding: 1px 5px; border-radius: 4px; }
+.tut-live {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #0f141c;
+  border: 1px solid var(--card-border);
+  color: var(--dim);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.tut-live.warn { color: var(--warn); border-color: #6b4a10; background: #241a06; }
+.tut-live.ok { color: var(--ok); border-color: #1e3a2a; }

@@ -1,6 +1,6 @@
 {
   "name": "scpsl-map-overlay",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "SCP: Secret Laboratory 离线地图覆盖层：读 Player.log 取种子，离线推算设施布局并以置顶透明穿透窗口显示。",
   "author": "5h1iky",
   "repository": {

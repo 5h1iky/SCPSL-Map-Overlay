@@ -77,14 +77,25 @@ export function validateSeed(value) {
   return n;
 }
 
-/** 取最后一次出现的节日（None → null，表示"无节日"） */
-export function parseHoliday(text) {
-  if (typeof text !== 'string' || text.length === 0) return null;
+/**
+ * 取最后一次出现的节日，并区分「日志里根本没有这一行」和「这一行是 None」。
+ * v0.3.1 修复：旧实现里 None 也返回 null，watcher 用 `holiday !== null` 判断，
+ * 结果节日从 Christmas 切回 None 时永远清不掉（整局都用节日图，直到重启）。
+ * @returns {{found: boolean, value: string|null}}
+ */
+export function findHoliday(text) {
+  if (typeof text !== 'string' || text.length === 0) return { found: false, value: null };
   let match;
   let found = null;
   HOLIDAY_PATTERN.lastIndex = 0;
   while ((match = HOLIDAY_PATTERN.exec(text)) !== null) found = match[1];
-  return found === null ? null : (HOLIDAY_VALUES[found] ?? null);
+  if (found === null) return { found: false, value: null };
+  return { found: true, value: HOLIDAY_VALUES[found] ?? null };
+}
+
+/** 取最后一次出现的节日（None → null，表示"无节日"）；"没有这一行"也返回 null */
+export function parseHoliday(text) {
+  return findHoliday(text).value;
 }
 
 /** 取最后一次加载的场景名（Facility / NewMainMenu / Loader） */
@@ -171,6 +182,10 @@ export class LogWatcher extends EventEmitter {
     this.lastReadAt = null;
     this.lastDeepScanAt = 0;
     this.lastDeepScanResult = null;
+    /** v0.3.1：深扫时顺带解析的节日信号（{found,value}），用于尾部没有节日行时兜底 */
+    this.lastDeepScanHoliday = null;
+    /** v0.3.1：节日深扫兜底只做一次（每次启动最多读一遍大文件） */
+    this.holidayDeepScanned = false;
     this.missCount = 0;
   }
 
@@ -209,9 +224,12 @@ export class LogWatcher extends EventEmitter {
     try {
       const { text } = readTail(this.logPath, this.deepScanBytes);
       this.lastDeepScanResult = parseSeed(text);
+      // v0.3.1：同一次读取顺手解析节日，避免为了节日再读一遍 32MB
+      this.lastDeepScanHoliday = findHoliday(text);
     } catch (error) {
       this.lastError = error.code || error.message;
       this.lastDeepScanResult = null;
+      this.lastDeepScanHoliday = null;
     }
     return this.lastDeepScanResult;
   }
@@ -257,10 +275,26 @@ export class LogWatcher extends EventEmitter {
     this.lastReadAt = Date.now();
 
     // ── 非 seed 信号：尾部读到就更新（尾部窗口 64KB 足够覆盖最近一次场景/服务器变化）──
-    const holiday = parseHoliday(tail.text);
-    if (holiday !== null && holiday !== this.signals.holiday) {
-      this.signals.holiday = holiday;
-      this.emit('holiday', { holiday, at: Date.now() });
+    const holidaySignal = findHoliday(tail.text);
+    let holidayFound = holidaySignal.found;
+    let holidayValue = holidaySignal.value;
+    /**
+     * v0.3.1 兜底：节日行和种子行一样会滑出 64KB 尾部（实测种子行能到 126KB 外）。
+     * 尾部没这行、且当前还没有节日时，做**一次**深扫（复用 deepScan，顺手解析节日）。
+     * 只做一次：日志里节日活动是低频变化，没必要每 500ms 去读 32MB。
+     */
+    if (!holidayFound && this.signals.holiday === null && !this.holidayDeepScanned) {
+      this.holidayDeepScanned = true;
+      this.deepScan({ force: true });
+      if (this.lastDeepScanHoliday?.found) {
+        holidayFound = true;
+        holidayValue = this.lastDeepScanHoliday.value;
+      }
+    }
+    // found=false（日志里没有这一行）≠ None（明确的"无节日"）：后者要能把旧值清掉
+    if (holidayFound && holidayValue !== this.signals.holiday) {
+      this.signals.holiday = holidayValue;
+      this.emit('holiday', { holiday: holidayValue, at: Date.now() });
       this.emitStatus();
     }
     const scene = parseScene(tail.text);

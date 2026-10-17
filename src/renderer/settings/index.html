@@ -15,6 +15,7 @@
       </div>
     </div>
     <div class="top-status">
+      <button class="pill pill-btn" id="open-tutorial" title="随时打开快速上手">使用教程</button>
       <span class="pill" id="pill-seed">种子 —</span>
       <span class="pill" id="pill-version">版本 —</span>
       <span class="pill" id="pill-watcher">日志 —</span>
@@ -34,6 +35,31 @@
   </div>
 
   <main>
+    <!-- v0.3.1 快速上手：可收起（状态记在设置里），但摘要行常驻；
+         当本局还没读到种子时，摘要自动变琥珀色并显示 ⚠，避免"关了就不提醒"。 -->
+    <section class="card tutorial" id="tutorial">
+      <details id="tutorialDetails" open>
+        <summary class="tut-summary">
+          <span class="tut-title">快速上手</span>
+          <span class="tut-core" id="tutCore">每开新一局，都要在游戏里重新敲一次 <code>seed</code></span>
+          <span class="tut-chev" aria-hidden="true"></span>
+        </summary>
+        <div class="tut-body">
+          <ol class="tut-steps">
+            <li>游戏显示模式设为 <b>「无边框窗口」</b>（独占全屏下任何第三方窗口都盖不上去，这是 Windows 机制）。</li>
+            <li><b>每开一局</b>（换图 / 重开）进服后，在聊天框敲一次 <code>seed</code> 回车 —— 这是本工具唯一的种子来源；不敲就会一直显示上一局的图。</li>
+            <li>按 <code id="tut-hk-toggle">Ctrl+1</code> 显示 / 隐藏地图；<code id="tut-hk-view">Ctrl+2</code> 切视图，<code id="tut-hk-route">Ctrl+3</code> 切路线，<code id="tut-hk-edit">Ctrl+0</code> 进入编辑模式。</li>
+          </ol>
+          <div class="tut-live" id="tutLive">当前：正在读取状态…</div>
+          <div class="row">
+            <button class="btn" id="tut-reread">重读日志</button>
+            <button class="btn" id="tut-readme">完整说明（README）</button>
+            <span class="hint">工具不会替你敲 seed，也不会读游戏内存。收起后标题行仍会提醒「该敲 seed 了」。</span>
+          </div>
+        </div>
+      </details>
+    </section>
+
     <section class="card">
       <h2>常规</h2>
       <label class="row"><input type="checkbox" id="autoStart" /> <span>开机自启</span><em>默认关闭</em></label>
@@ -168,6 +194,7 @@
       <pre class="text" id="compliance"></pre>
       <div class="row">
         <button class="btn" id="open-readme">打开 README</button>
+        <button class="btn" id="open-github">GitHub 仓库 ↗</button>
         <button class="btn danger" id="quit">退出程序</button>
       </div>
     </section>

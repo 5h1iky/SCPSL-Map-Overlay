@@ -13,6 +13,8 @@
   const errorCard = document.getElementById('error');
   const editFrame = document.getElementById('editframe');
   const sbSeed = document.getElementById('sb-seed');
+  const sbGame = document.getElementById('sb-game');
+  const sbGameDot = document.getElementById('sb-game-dot');
   const sbView = document.getElementById('sb-view');
   const sbRoute = document.getElementById('sb-route');
   const sbVersion = document.getElementById('sb-version');
@@ -143,10 +145,36 @@
     document.documentElement.style.setProperty('--hud-opacity', String(value));
   }
 
+  /**
+   * v0.3.1：游戏状态段（场景 / 服务器 / 节日）。
+   * 数据由主进程 describeSession() 直接给成文案，渲染端不做任何判断。
+   */
+  function renderGameState(session) {
+    if (!sbGame || !sbGameDot) return;
+    if (!session) {
+      sbGame.classList.add('hidden');
+      sbGameDot.classList.add('hidden');
+      return;
+    }
+    const bits = [`● ${session.sceneLabel}`];
+    if (session.server) bits.push(session.server);
+    if (session.holidayLabel) bits.push(session.holidayLabel);
+    sbGame.textContent = bits.join(' · ');
+    sbGame.className = `sb-game ${session.sceneTone ?? 'unknown'}`;
+    sbGame.title = session.needSeedHint ? `${bits.join(' · ')}｜${session.needSeedHint}` : bits.join(' · ');
+    sbGame.classList.remove('hidden');
+    sbGameDot.classList.remove('hidden');
+  }
+
   function renderStatus() {
     const s = state.status;
     if (!s) return;
-    sbSeed.textContent = s.seed ? `种子 ${s.seed}` : '种子 —（去游戏里敲一次 seed）';
+    const prevSeed = s.seedSource === 'prev-log';
+    sbSeed.textContent = s.seed
+      ? `种子 ${s.seed}${prevSeed ? '（上一局）' : ''}`
+      : '种子 —（去游戏里敲一次 seed）';
+    sbSeed.classList.toggle('prev', Boolean(s.seed) && prevSeed);
+    renderGameState(s.session ?? null);
     sbView.textContent = s.viewLabel ?? '—';
     const route = s.route;
     if (route && route.ok !== false) {
@@ -169,7 +197,9 @@
     }
     if (s.hotkeys) {
       state.hotkeys = s.hotkeys;
-      lgHint.textContent = `${s.hotkeys.cycleView} 切视图 · ${s.hotkeys.cycleRoute} 切路线 · ${s.hotkeys.toggle} 隐藏 · ${s.hotkeys.editMode} 编辑`;
+      // v0.3.1：本局还没读到种子时，图例条末尾常驻一句提醒（与设置页教程卡同一判断）
+      const needHint = s.session?.needsSeed ? ' · ⚠ 本局还没读到种子，进游戏敲 seed' : '';
+      lgHint.textContent = `${s.hotkeys.cycleView} 切视图 · ${s.hotkeys.cycleRoute} 切路线 · ${s.hotkeys.toggle} 隐藏 · ${s.hotkeys.editMode} 编辑${needHint}`;
       efHintExit.textContent = s.hotkeys.editMode ?? 'Ctrl+0';
     }
     statusbar.classList.toggle('hidden', !state.visible && !isPreview);

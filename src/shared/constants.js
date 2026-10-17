@@ -179,3 +179,11 @@ export const ZONE_TRANSITION_NOTE = {
 };
 
 export const BANNER_LEVELS = { info: 'info', warn: 'warn', error: 'error' };
+
+/**
+ * 外部链接白名单（v0.3.1）。
+ * 渲染进程只能通过 intent:openExternal 打开这里列出的地址；主进程会拒绝其它 URL
+ * （即使渲染进程被注入，也拿不到一个"任意 URL 打开器"）。
+ */
+export const REPO_URL = 'https://github.com/5h1iky/SCPSL-Map-Overlay';
+export const RELEASES_URL = `${REPO_URL}/releases`;

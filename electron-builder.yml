@@ -34,15 +34,25 @@ win:
     - target: portable
       arch: [x64]
   icon: assets/icon.png
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  # v0.3.1：产物名改成 ASCII —— README 里一直写的是 SCPSL-Map-Overlay-<版本>-setup.exe，
+  # 旧的中文+空格文件名既对不上文档，放进 Release 下载链接还要 URL 编码。
+  artifactName: SCPSL-Map-Overlay-${version}-${arch}.${ext}
 
 nsis:
+  artifactName: SCPSL-Map-Overlay-${version}-setup.${ext}
   oneClick: false
-  perMachine: false
+  # v0.3.1：改成「按机器安装」（per-machine）。
+  # 原因（用户实测反馈）：
+  #   1) per-user 安装在非管理员权限下无法写 D:\ / E:\ 这类目录，选盘会报「没有权限」；
+  #   2) per-machine 的卸载项会进「设置 → 应用」，不用再去 %LOCALAPPDATA%\Programs 里翻；
+  #   3) 安装时统一提权（UAC），装到 Program Files 或任意盘都由管理员权限完成。
+  perMachine: true
+  allowElevation: true
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: SCPSL 地图工具
+  uninstallDisplayName: SCPSL 地图工具
   deleteAppDataOnUninstall: false
   # 让安装包自己创建的快捷方式带上 --no-sandbox（见 build/installer.nsh 里的说明），
   # 这样在 Chromium 沙箱起不来的机器上，用户双击快捷方式也能正常启动，
@@ -50,4 +60,4 @@ nsis:
   include: build/installer.nsh
 
 portable:
-  artifactName: ${productName}-${version}-portable.${ext}
+  artifactName: SCPSL-Map-Overlay-${version}-portable.${ext}

@@ -28,6 +28,27 @@ import { fileURLToPath } from 'node:url';
 /** 游戏窗口标题（Unity productName） */
 export const GAME_WINDOW_TITLE = 'SCP: Secret Laboratory';
 
+/**
+ * v0.3.1 探测节奏（实测：本机一次探测 2.1–2.4 秒，因为每次都要 PowerShell + Add-Type 编译 C#）：
+ *   · 探到游戏 → 30 秒后再看（切屏是低频事件，15–30 秒延迟无感）；
+ *   · 没探到游戏 → 退避到 2 分钟（游戏没开时完全没必要频繁起进程）；
+ *   · 单显示器 → 一次都不探（这条功能对单屏没有意义）。
+ * 结果就是：单屏用户 0 次 PowerShell；多屏用户每分钟最多 2 次。
+ */
+export const DISPLAY_PROBE_INTERVAL_MS = 30_000;
+export const DISPLAY_PROBE_BACKOFF_MS = 120_000;
+
+/**
+ * 是否可以/需要探测游戏窗口所在显示器（纯函数，单测锁行为）。
+ * @param {{mode?: string, displayCount?: number, visible?: boolean}} opts
+ * @returns {boolean}
+ */
+export function shouldPollGameDisplay({ mode = 'auto', displayCount = 1, visible = false } = {}) {
+  if (mode !== 'auto') return false;          // 固定主屏：不跟
+  if (!Number.isFinite(displayCount) || displayCount <= 1) return false; // 单屏：不探（卡顿根因）
+  return visible === true;                    // 覆盖层隐藏时也没必要探
+}
+
 /** 标题是否就是游戏窗口（大小写不敏感的前缀匹配，兼容 [beta] 等后缀） */
 export function isGameWindowTitle(title) {
   return String(title ?? '').toLowerCase().startsWith(GAME_WINDOW_TITLE.toLowerCase());
@@ -97,12 +118,25 @@ export function resolveDisplay(displays, deviceName) {
 
 /**
  * 一步到位：游戏窗口当前所在的显示器（找不到游戏 → null）。
+ * @param {object} [opts]
+ * @param {object} [opts.screenApi] 由主进程注入 Electron 的 screen（避免在函数里 import 'electron'）
  * @returns {Promise<{display: object, deviceName: string, rect: object}|null>}
  */
-export async function findGameDisplay() {
+export async function findGameDisplay({ screenApi = null } = {}) {
   const found = await findGameWindow();
   if (!found) return null;
-  const { screen } = await import('electron');
+  /**
+   * ⚠️ Electron 38 + Node 22：动态 import('electron') 的命名导出不可靠
+   * （HANDOVER-0.3.0 §1：内置 electron 是运行时构造的 CJS，cjs-module-lexer 分析不出来）。
+   * 所以优先用调用方注入的 screen；只有单测/独立调用才回退动态 import，
+   * 且回退时走 .default（与主进程同一套取法）。
+   */
+  let screen = screenApi;
+  if (!screen) {
+    const electron = await import('electron');
+    screen = electron.default?.screen ?? electron.screen ?? null;
+  }
+  if (!screen) return null;
   const display = resolveDisplay(screen.getAllDisplays(), found.deviceName);
   if (!display) return null;
   return { display, deviceName: found.deviceName, rect: found.rect };

@@ -23,10 +23,14 @@ import { Settings } from './settings.js';
 import { LogWatcher, defaultPlayerLogPath, validateSeed, prevLogPathFor } from './log-watcher.js';
 import { readGameVersion, serverLogsRoot } from './version-guard.js';
 import { detectConflicts, readGameBindings, registerHotkeys, defaultGameConfigDir, captureAccelerator } from './hotkeys.js';
-import { HOTKEY_LABEL, ROUTE_PRESETS, STYLE, VIEW_LABEL } from '../shared/constants.js';
+import { HOTKEY_LABEL, ROUTE_PRESETS, STYLE, VIEW_LABEL, REPO_URL, RELEASES_URL } from '../shared/constants.js';
 import { runVerify } from './verifier.js';
 import { scheduleSelftest, selftestRequested } from './selftest.js';
-import { findGameDisplay } from './game-window-finder.js';
+import {
+  findGameDisplay, shouldPollGameDisplay,
+  DISPLAY_PROBE_INTERVAL_MS, DISPLAY_PROBE_BACKOFF_MS,
+} from './game-window-finder.js';
+import { describeSession } from './session-state.js';
 
 /*
  * ⚠️ 启动前提：本机（装了 360 主动防御 ZhuDongFangYu）Chromium 沙箱起不来。
@@ -100,9 +104,16 @@ function broadcast(channel, payload) {
 }
 
 function statusPayload() {
+  const status = controller.status();
+  const watcherStatus = watcher?.status() ?? null;
   return {
-    status: { ...controller.status(), hotkeys: settings.data.hotkeys },
-    watcher: watcher?.status() ?? null,
+    status: {
+      ...status,
+      /** v0.3.1：设置页教程与悬浮窗状态条共用的这局状态（场景/服务器/节日/是否该敲 seed） */
+      session: describeSession({ watcher: watcherStatus, seed: status.seed, seedSource: status.seedSource }),
+      hotkeys: settings.data.hotkeys,
+    },
+    watcher: watcherStatus,
     hotkeyReport,
   };
 }
@@ -114,8 +125,13 @@ function broadcastStatus() {
 /* ── 窗口 ────────────────────────────────────────────────── */
 /** 覆盖层当前所在的显示器 id（v0.3.0 多显示器跟随用；null = 还没决定） */
 let currentDisplayId = null;
-/** 多显示器轮询定时器（只在 display 设置 = 'auto' 时启用） */
+/**
+ * 下一次探测的定时器。v0.3.1 从 setInterval 改成**递归 setTimeout**：
+ * 永远只有一轮在排队，不会出现「上一轮还没回来、下一轮又起一个 PowerShell」。
+ */
 let displayFollowTimer = null;
+/** 同一时刻只允许一个探测在飞（v0.3.1：实测单次探测 2.1–2.4 秒，3 秒定时器必然叠加） */
+let displayProbeInFlight = false;
 
 function createOverlayWindow() {
   const display = screen.getPrimaryDisplay();
@@ -164,15 +180,20 @@ function createOverlayWindow() {
 /**
  * v0.3.0：把覆盖层移到指定显示器（游戏窗口所在屏）。
  * 单显示器 / 同一个屏 / 找不到游戏 → 什么都不做（不乱跳）。
+ *
+ * v0.3.1：加 in-flight 锁。实测探测器单次 2.1–2.4 秒（PowerShell + Add-Type 编译 C#），
+ * 原来 3 秒的 setInterval 会在探测没回来时再起一个进程，进程越叠越多 —— 这是鼠标卡顿的放大器。
  */
 async function followGameDisplay({ force = false } = {}) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return null;
-  if (settings.data.overlay.display !== 'auto' && !force) return null;
+  if (!force && settings.data.overlay.display !== 'auto') return null;
+  if (displayProbeInFlight) return null;
+  displayProbeInFlight = true;
   try {
-    const found = await findGameDisplay();
+    const found = await findGameDisplay({ screenApi: screen });
     if (!found) return null;
     const targetId = String(found.display.id);
-    if (targetId === currentDisplayId) return null;
+    if (targetId === currentDisplayId) return found.display;
     const { x, y, width, height } = found.display.bounds;
     overlayWindow.setBounds({ x, y, width, height });
     currentDisplayId = targetId;
@@ -183,21 +204,60 @@ async function followGameDisplay({ force = false } = {}) {
   } catch (error) {
     logger?.warn?.('跟随游戏显示器失败', { error: error.message });
     return null;
+  } finally {
+    displayProbeInFlight = false;
   }
 }
 
-/** 启动/关闭多显示器跟随轮询（设置里的 display 开关） */
-function wireDisplayFollow() {
+/** 排下一轮探测。单屏 / 固定主屏时**不排**（v0.3.1 卡顿修复的关键）。 */
+function scheduleDisplayProbe(delay = 0) {
   if (displayFollowTimer) {
-    clearInterval(displayFollowTimer);
+    clearTimeout(displayFollowTimer);
     displayFollowTimer = null;
   }
+  if (!settings) return;
   if (settings.data.overlay.display !== 'auto') return;
-  // 3 秒一次：窗口枚举是系统级查询，不宜更频；游戏切换显示器是低频事件
-  displayFollowTimer = setInterval(() => { followGameDisplay(); }, 3000);
+  if (screen.getAllDisplays().length <= 1) return;
+  displayFollowTimer = setTimeout(runDisplayProbe, Math.max(0, delay));
   displayFollowTimer.unref?.();
-  // 显示器热插拔 / 分辨率变化也触发一次
-  screen.on('display-metrics-changed', () => { followGameDisplay(); });
+}
+
+/**
+ * 一轮探测。
+ * 只有「多屏 + auto + 覆盖层可见」才会真正 fork PowerShell；
+ * 隐藏时直接不排（重新显示时 setOverlayVisible 会立刻补一次）。
+ */
+async function runDisplayProbe() {
+  displayFollowTimer = null;
+  if (!settings) return;
+  if (settings.data.overlay.display !== 'auto') return;
+  if (screen.getAllDisplays().length <= 1) return;
+  if (!overlayWindow || overlayWindow.isDestroyed() || !overlayWindow.isVisible()) return;
+  const started = Date.now();
+  let found = null;
+  try {
+    found = await followGameDisplay();
+  } finally {
+    // 探到游戏：30 秒后再看；没探到：退避到 2 分钟（游戏没开时没必要一直起进程）
+    logger?.debug?.('显示器跟随探测', { ms: Date.now() - started, found: Boolean(found) });
+    scheduleDisplayProbe(found ? DISPLAY_PROBE_INTERVAL_MS : DISPLAY_PROBE_BACKOFF_MS);
+  }
+}
+
+/** 启动/关闭跟随探测（设置里的 display 开关 + 显示器增删时重判） */
+function wireDisplayFollow() {
+  if (displayFollowTimer) {
+    clearTimeout(displayFollowTimer);
+    displayFollowTimer = null;
+  }
+  if (!settings) return;
+  if (settings.data.overlay.display !== 'auto') return;
+  if (screen.getAllDisplays().length <= 1) {
+    // 单屏：这条功能没有任何意义 → 一次 PowerShell 都不起
+    logger?.info?.('单显示器：不启用游戏窗口跟随探测');
+    return;
+  }
+  scheduleDisplayProbe(1200);
 }
 
 /** 切回 primary 模式：把覆盖层移回主屏（用户显式选的固定行为） */
@@ -272,6 +332,10 @@ function setOverlayVisible(visible) {
   if (visible) {
     overlayWindow.showInactive();
     overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+    // v0.3.1：隐藏期间不做跨进程探测，重新显示时立刻补一次（多屏才需要）
+    if (settings?.data?.overlay?.display === 'auto' && screen.getAllDisplays().length > 1) {
+      scheduleDisplayProbe(300);
+    }
   } else {
     overlayWindow.hide();
   }
@@ -401,6 +465,9 @@ function registerIpc() {
       defaultLogPath: defaultPlayerLogPath(),
       noticeAcknowledged: settings.data.noticeAcknowledged,
       appVersion: app.getVersion(),
+      /** v0.3.1：设置页「GitHub 仓库」按钮用；主进程白名单里也只认这两个地址 */
+      repoUrl: REPO_URL,
+      releasesUrl: RELEASES_URL,
       dataDir,
     },
   }));
@@ -496,10 +563,22 @@ function registerIpc() {
   ipcMain.handle('intent:openLogFolder', () => {
     shell.openPath(join(app.getPath('userData'), 'logs'));
   });
-  ipcMain.handle('intent:openExternal', (_event, { url }) => {
-    const target = url === 'README.md' ? join(appRoot, 'README.md') : url;
-    if (/^https?:/.test(target)) shell.openExternal(target);
-    else shell.openPath(target);
+  /**
+   * v0.3.1：外部链接收成**白名单**。
+   * 原来任何 http(s) URL 都会直接 shell.openExternal —— 渲染进程一旦被注入，
+   * 就等于拿到一个"任意 URL 打开器"。现在只允许 README 与仓库/Releases 两个地址。
+   */
+  ipcMain.handle('intent:openExternal', (_event, { url } = {}) => {
+    if (url === 'README.md') {
+      shell.openPath(join(appRoot, 'README.md'));
+      return { ok: true };
+    }
+    if (url === REPO_URL || url === RELEASES_URL) {
+      shell.openExternal(url);
+      return { ok: true };
+    }
+    logger?.warn?.('拒绝打开未授权链接', { url: String(url ?? '').slice(0, 200) });
+    return { ok: false, error: 'URL_NOT_ALLOWED' };
   });
 
   ipcMain.handle('app:quit', () => { app.isQuitting = true; app.quit(); });
@@ -644,6 +723,12 @@ async function bootstrap() {
   buildTray();
   registerIpc();
   wireHotkeys();
+
+  // v0.3.1：显示器热插拔 / 分辨率变化 → 重新判断要不要跟随（监听只注册一次，
+  // 否则每次改设置都会叠加一个监听器 —— v0.3.0 的旧写法有这个问题）。
+  screen.on('display-metrics-changed', () => { wireDisplayFollow(); });
+  screen.on('display-added', () => { wireDisplayFollow(); });
+  screen.on('display-removed', () => { wireDisplayFollow(); });
   wireDisplayFollow();
 
   watcher = new LogWatcher({ logPath: settings.data.seed.logPath || defaultPlayerLogPath() });
