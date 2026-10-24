@@ -169,7 +169,7 @@ function displayList() {
  */
 function applyOverlayDisplay({ persist = false } = {}) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return null;
-  const display = pickDisplay(screen.getAllDisplays(), settings.data.overlay.displayId);
+  const display = pickDisplay(screen.getAllDisplays(), settings.data.overlay.displayId, screen.getPrimaryDisplay().id);
   if (!display) return null;
   const { x, y, width, height } = display.bounds;
   overlayWindow.setBounds({ x, y, width, height });
@@ -182,7 +182,7 @@ function applyOverlayDisplay({ persist = false } = {}) {
 }
 
 function createOverlayWindow() {
-  const display = pickDisplay(screen.getAllDisplays(), settings.data.overlay.displayId)
+  const display = pickDisplay(screen.getAllDisplays(), settings.data.overlay.displayId, screen.getPrimaryDisplay().id)
     ?? screen.getPrimaryDisplay();
   const { x, y, width, height } = display.bounds;
   currentDisplayId = String(display.id);

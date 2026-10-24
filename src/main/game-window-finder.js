@@ -38,18 +38,29 @@ export const GAME_WINDOW_TITLE = 'SCP: Secret Laboratory';
  *
  * 这个纯函数负责把「用户选的 displayId」解析成 Electron display：
  *   找得到 → 用它；找不到（显示器拔了/换机器）→ 主显示器；再没有 → 第一个。
- * @param {Array<{id:number,isPrimary?:boolean}>} displays screen.getAllDisplays()
+ * @param {Array<{id:number,isPrimary?:boolean,primary?:boolean}>} displays screen.getAllDisplays()
  * @param {number|null} displayId 设置里存的 id；null = 主显示器
+ * @param {number|null} [primaryId] 主显示器 id（screen.getPrimaryDisplay().id）
  * @returns {object|null}
  */
-export function pickDisplay(displays, displayId = null) {
+export function pickDisplay(displays, displayId = null, primaryId = null) {
   if (!Array.isArray(displays) || displays.length === 0) return null;
   if (displayId !== null && displayId !== undefined) {
     const wanted = String(displayId);
     const match = displays.find((d) => String(d.id) === wanted);
     if (match) return match;
   }
-  return displays.find((d) => d.isPrimary) ?? displays[0] ?? null;
+  /**
+   * v0.3.2 修复："找不到选中的屏就回主屏"以前永远不生效 ——
+   * Electron 的 Display 对象**没有 isPrimary 字段**（主屏只能比
+   * screen.getPrimaryDisplay().id，由调用方当 primaryId 传进来），旧代码找
+   * d.isPrimary 恒失败，实际恒取 displays[0]（不保证是主屏）。
+   * 带 isPrimary / primary 标记的装饰列表（单测、displayList 输出）继续兼容。
+   */
+  const byPrimaryId = primaryId !== null && primaryId !== undefined
+    ? (displays.find((d) => d.id === primaryId) ?? null)
+    : null;
+  return byPrimaryId ?? displays.find((d) => d.isPrimary || d.primary) ?? displays[0] ?? null;
 }
 
 /** 标题是否就是游戏窗口（大小写不敏感的前缀匹配，兼容 [beta] 等后缀） */
