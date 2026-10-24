@@ -550,6 +550,8 @@
     api.onStatus((payload) => { if (payload?.status) applyStatus(payload); boot = { ...boot, ...payload }; });
     api.onSeed(() => api.app.status().then((r) => { boot = { ...boot, ...r }; applyStatus(r); }));
     api.onError((payload) => {
+      // code:'CLEAR' = 错误已过期（新布局已算出），收起上次的错误文本而不是再打印一条
+      if (payload?.code === 'CLEAR') { $('verifyOut').textContent = ''; return; }
       $('verifyOut').textContent = `[${payload.code}] ${payload.message}\n${payload.detail ?? ''}`;
     });
   }

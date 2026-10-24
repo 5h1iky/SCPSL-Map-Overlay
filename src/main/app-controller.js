@@ -124,8 +124,10 @@ export class AppController extends EventEmitter {
       && this.map
       && (normalizedHoliday ?? null) === (this.holiday ?? null);
     if (unchanged) {
+      // ⚠️ 必须带 ok:true —— 调用方（index.js handleSeed）按 result.ok 判成败，
+      // 少了它"种子没变化"会被当成生成失败、每次强制重读都弹"布局生成失败"（v0.3.2 修复）。
       this.emitStatus();
-      return { changed: false };
+      return { changed: false, ok: true };
     }
     const regenerate = this.map !== null;
     this.seed = seed;

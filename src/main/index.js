@@ -338,20 +338,24 @@ function recordSeedHistory(seed, source, server = null) {
 function handleSeed(seed, source, { holiday = null } = {}) {
   if (!seed) return { ok: false, changed: false, error: '没有可用的种子' };
   const result = controller.setSeed(seed, source, holiday);
-  if (result.ok) {
-    logger.info('种子已切换', { seed, source, holiday: holiday ?? 'None', ms: result.ms, cached: result.cached });
-    broadcast('seed:changed', { seed, source, holiday: holiday ?? null, at: Date.now() });
-    // v0.3.0 行为修正：日志出现新种子 = 用户已经在玩新的一局，
-    // 旧的手动固定值不再有意义（留着它会让下次启动回到过时布局）→ 自动清除。
-    if (source !== 'manual' && settings.data.seed.manualOverride) {
-      settings.patch('seed.manualOverride', null);
-      logger.info('日志出现新种子，已清除过时的手动固定种子');
-    }
-    if (settings.data.seed.persistLastSeed) settings.patch('seed.lastSeed', seed);
-    recordSeedHistory(seed, source, watcher?.signals?.server ?? null);
-  } else {
+  if (result.ok === false) {
     broadcast('layout:error', { code: 'GEN_FAILED', message: '布局生成失败', detail: result.error });
+    return result;
   }
+  /** v0.3.2 修复：同种子同节日"无需重算"不是错误 —— 以前这里按 result.ok 判成败，
+   *  无变化分支缺 ok 字段 → 每次强制重读（Ctrl+5 / 托盘"重新读取"）都假报"布局生成失败"。 */
+  if (result.changed === false) return result;
+  logger.info('种子已切换', { seed, source, holiday: holiday ?? 'None', ms: result.ms, cached: result.cached });
+  broadcast('seed:changed', { seed, source, holiday: holiday ?? null, at: Date.now() });
+  // v0.3.0 行为修正：日志出现新种子 = 用户已经在玩新的一局，
+  // 旧的手动固定值不再有意义（留着它会让下次启动回到过时布局）→ 自动清除。
+  // v0.3.2 收紧：只有日志种子**与固定值不同**才算"新一局"（同种子强制重读不该顶掉固定值）。
+  if (source !== 'manual' && settings.data.seed.manualOverride && settings.data.seed.manualOverride !== seed) {
+    settings.patch('seed.manualOverride', null);
+    logger.info('日志出现新种子，已清除过时的手动固定种子');
+  }
+  if (settings.data.seed.persistLastSeed) settings.patch('seed.lastSeed', seed);
+  recordSeedHistory(seed, source, watcher?.signals?.server ?? null);
   return result;
 }
 
