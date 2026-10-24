@@ -348,7 +348,7 @@ export class LogWatcher extends EventEmitter {
     this.seedSource = source;
     this.state = 'seedFound';
     this.lastError = null;
-    this.emit('seed', { seed, source, at: Date.now() });
+    this.emit('seed', { seed, source, at: Date.now(), forced: force === true });
     this.emitStatus();
     return seed;
   }

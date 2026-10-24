@@ -765,7 +765,22 @@ async function bootstrap() {
   }
 
   watcher = new LogWatcher({ logPath: settings.data.seed.logPath || defaultPlayerLogPath() });
-  watcher.on('seed', ({ seed, source }) => handleSeed(seed, source, { holiday: watcher.signals.holiday }));
+  /**
+   * v0.3.2 修复：启动时**手动固定种子优先**。
+   * 旧实现先 watcher.start()（内部同步 tick，日志种子立刻 emit）再判断 manualOverride ——
+   * 固定值被日志种子顶掉、还按 handleSeed 的规则从配置里静默清空，"启动时固定种子优先"
+   * 的分支实际是死代码。现在：
+   *   · bootingWithPin：启动首 tick 的自动种子不覆盖固定值；
+   *   · bootSeedGuard：日志里**既有**的种子（上一局残留）不顶掉固定值；
+   *   · 日志出现**别的**种子（用户敲了新 seed）或用户强制重读（Ctrl+5）→ 正常切换并清固定值。
+   */
+  let bootingWithPin = false;
+  let bootSeedGuard = null;
+  watcher.on('seed', ({ seed, source, forced }) => {
+    if (bootingWithPin && !forced) return;
+    if (!forced && seed === bootSeedGuard) return;
+    handleSeed(seed, source, { holiday: watcher.signals.holiday });
+  });
   watcher.on('holiday', ({ holiday }) => {
     // 节日活动会改布局：种子不变也要重新生成（app-controller.setHoliday）
     const changed = controller.setHoliday(holiday);
@@ -787,15 +802,14 @@ async function bootstrap() {
     broadcastStatus();
   });
   watcher.on('status', () => broadcastStatus());
-  watcher.start();
+  // 手动固定种子必须在 start() 的首次 tick **之前**应用（v0.3.2，见上方注释）
+  const pinnedSeed = settings.data.seed.manualOverride ?? null;
+  if (pinnedSeed) handleSeed(pinnedSeed, 'manual', { holiday: watcher.signals.holiday });
+  bootingWithPin = Boolean(pinnedSeed);
+  watcher.start(); // 内部同步 tick 一次：解析到的自动种子在 bootingWithPin 期间被压住
   logger.info('LogWatcher 启动', watcher.status());
-
-  if (settings.data.seed.manualOverride) {
-    handleSeed(settings.data.seed.manualOverride, 'manual', { holiday: watcher.signals.holiday });
-  } else {
-    const seed = watcher.tick();
-    if (seed) handleSeed(seed, watcher.seedSource ?? 'log', { holiday: watcher.signals.holiday });
-  }
+  bootingWithPin = false;
+  bootSeedGuard = pinnedSeed ? watcher.currentSeed : null;
 
   if (settings.data.overlay.visibleOnStart) setOverlayVisible(true);
   if (!settings.data.noticeAcknowledged) showSettingsWindow();
