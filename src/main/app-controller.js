@@ -53,6 +53,13 @@ export class AppController extends EventEmitter {
     this.lastLayout = null;
     this.lastGenerateMs = null;
     this.lastLayoutMs = null;
+    /**
+     * v0.3.2 护栏：Node EventEmitter 对**无监听器**的 'error' 事件直接 throw。
+     * init() 在生成器不可用 / POI 表读取失败时会 emit('error')，而调用方
+     * （bootstrap / verifier.runVerify）不一定来得及挂监听 —— 挂一个空监听兜底，
+     * 让 emit('error') 永不炸掉调用链；关心错误的调用方照常再挂自己的监听即可。
+     */
+    this.on('error', () => {});
   }
 
   async init() {

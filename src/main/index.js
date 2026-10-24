@@ -104,6 +104,25 @@ function broadcast(channel, payload) {
   }
 }
 
+/**
+ * v0.3.2：错误转发。窗口还没建好 / 还没加载完时广播出去没人收，
+ * 先攒进 startupErrors，等窗口 ready 时补发 —— 否则"生成器不可用"这类启动期错误
+ * 永远到不了 UI（旧实现里它恰好在 createOverlayWindow() 之前广播，白发）。
+ */
+const startupErrors = [];
+function forwardError(payload) {
+  const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+  if (wins.length === 0) {
+    startupErrors.push(payload);
+    return;
+  }
+  broadcast('layout:error', payload);
+}
+function flushStartupErrors(win) {
+  if (!win || win.isDestroyed() || startupErrors.length === 0) return;
+  for (const payload of startupErrors) win.webContents.send('layout:error', payload);
+}
+
 function statusPayload() {
   const status = controller.status();
   const watcherStatus = watcher?.status() ?? null;
@@ -203,6 +222,7 @@ function createOverlayWindow() {
     overlayWindow.webContents.send('overlay:state', overlayState());
     if (controller?.lastLayout) overlayWindow.webContents.send('layout:ready', controller.lastLayout);
     overlayWindow.webContents.send('app:status', statusPayload());
+    flushStartupErrors(overlayWindow);
   });
   return overlayWindow;
 }
@@ -419,6 +439,7 @@ function registerIpc() {
     win.webContents.send('app:status', statusPayload());
     win.webContents.send('overlay:state', overlayState());
     if (controller.lastLayout) win.webContents.send('layout:ready', controller.lastLayout);
+    flushStartupErrors(win);
   });
 
   ipcMain.handle('app:getStatus', () => ({
@@ -703,13 +724,24 @@ async function bootstrap() {
   logger.info('启动', { version: app.getVersion(), electron: process.versions.electron, settings: settings.filePath });
 
   controller = new AppController({ generatorEntry, poiTablePath, iconManifestPath, logger, settings });
+  /**
+   * v0.3.2 修复：事件监听必须**先于** controller.init() 挂上。
+   * init() 在生成器不可用 / POI 表读取失败时会 emit('error')，旧顺序（先 init 后挂监听）
+   * 踩中 EventEmitter「无监听的 'error' 直接 throw」→ bootstrap 整体中断、窗口/托盘/IPC/
+   * 热键全不创建、应用变僵尸进程，错误也永远到不了 UI。
+   */
+  controller.on('layout', (layout) => {
+    broadcast('layout:ready', layout);
+    // v0.3.2 修复：出图成功 = 之前的错误已过期。渲染端收到 code:'CLEAR' 即收起错误卡
+    // （以前全代码库没人发 CLEAR，"布局生成失败"的错误卡一旦弹出就挂到会话结束）。
+    broadcast('layout:error', { code: 'CLEAR' });
+  });
+  controller.on('status', () => { broadcastStatus(); refreshTrayMenu(); });
+  controller.on('error', (payload) => forwardError(payload));
   const init = await controller.init();
   if (!init.info) {
-    broadcast('layout:error', { code: 'GENERATOR_UNAVAILABLE', message: '生成器不可用', detail: controller.mapService.loadError });
+    forwardError({ code: 'GENERATOR_UNAVAILABLE', message: '生成器不可用', detail: controller.mapService.loadError });
   }
-  controller.on('layout', (layout) => broadcast('layout:ready', layout));
-  controller.on('status', () => { broadcastStatus(); refreshTrayMenu(); });
-  controller.on('error', (payload) => broadcast('layout:error', payload));
 
   const game = readGameVersion({ playerLogPath: settings.data.seed.logPath || defaultPlayerLogPath(), logsRoot: serverLogsRoot() });
   controller.setGameVersion(game.version, game.source);
