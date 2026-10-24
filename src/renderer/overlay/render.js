@@ -182,7 +182,24 @@
     const bounds = layout.bounds;
     const bw = Math.max(bounds.width, 1);
     const bh = Math.max(bounds.height, 1);
-    if (!autoFit && frozen) return { ...frozen, cssWidth, cssHeight };
+    if (!autoFit && frozen) {
+      /**
+       * v0.3.2 修复：冻结的只有**尺寸**（k/面板长宽），位置仍按 anchor 重算。
+       * 旧实现把整个 frozen 原样返回 —— 编辑模式拖动 / 右键复位在关掉「自动适配」后
+       * 完全无效（anchor 改了、落盘了，画面却一像素不动，等下次重算又突然跳位）。
+       */
+      const { k, panelW, panelH } = frozen;
+      const cx = cssWidth * anchor.x;
+      const cy = cssHeight * anchor.y;
+      const panelX = Math.min(Math.max(cx - panelW / 2, 4), Math.max(4, cssWidth - panelW - 4));
+      const panelY = Math.min(Math.max(cy - panelH / 2, 4), Math.max(4, cssHeight - panelH - 4));
+      return {
+        k, panelX, panelY, panelW, panelH,
+        originX: panelX + PAD - bounds.minX * k,
+        originY: panelY + PAD - bounds.minY * k,
+        cssWidth, cssHeight,
+      };
+    }
     const targetH = Math.max(120, cssHeight * fitHeightRatio * scale);
     // 高度优先，同时限制宽度不超过屏幕的 46%（否则细长布局会横跨整个屏幕挡住视野）
     const maxPanelW = Math.max(220, cssWidth * 0.46);
