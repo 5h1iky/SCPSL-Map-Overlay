@@ -158,6 +158,7 @@ export class LogWatcher extends EventEmitter {
     tailBytes = 65536,
     deepScanBytes = 32 * 1024 * 1024,
     deepScanCooldownMs = 5000,
+    confirmScanMs = 30000,
   } = {}) {
     super();
     this.logPath = logPath || defaultPlayerLogPath();
@@ -171,6 +172,8 @@ export class LogWatcher extends EventEmitter {
      */
     this.deepScanBytes = deepScanBytes;
     this.deepScanCooldownMs = deepScanCooldownMs;
+    /** v0.3.2：手上只有 prev-log 兜底种子时，"确认性"深扫（找本局真种子）的最小间隔 */
+    this.confirmScanMs = confirmScanMs;
     this.lastDeepScanAt = 0;
     this.timer = null;
     this.currentSeed = null;
@@ -190,7 +193,24 @@ export class LogWatcher extends EventEmitter {
   }
 
   setLogPath(path) {
-    this.logPath = path;
+    if (path !== this.logPath) {
+      /**
+       * v0.3.2 修复：换日志文件 = 换会话，旧文件的状态必须全部作废 ——
+       * 旧实现只清 missCount，于是 scene/server/holiday 还按旧文件判断（智能显隐错乱）、
+       * holidayDeepScanned 仍为 true（新文件的节日行永不深扫兜底）、
+       * currentSeed 还是旧文件的种子且 state='seedFound'。
+       */
+      this.logPath = path;
+      this.currentSeed = null;
+      this.seedSource = null;
+      this.signals = { seed: null, holiday: null, scene: null, server: null };
+      this.holidayDeepScanned = false;
+      this.lastDeepScanAt = 0;
+      this.lastDeepScanResult = null;
+      this.lastDeepScanHoliday = null;
+      this.lastError = null;
+      this.state = 'idle';
+    }
     this.missCount = 0;
     this.emitStatus();
   }
@@ -217,9 +237,10 @@ export class LogWatcher extends EventEmitter {
   }
 
   /** 深处扫描：一次性读入尾部最多 deepScanBytes，找最后一次种子（有冷却，避免狂读大文件） */
-  deepScan({ force = false } = {}) {
+  deepScan({ force = false, minIntervalMs = null } = {}) {
     const now = Date.now();
-    if (!force && now - this.lastDeepScanAt < this.deepScanCooldownMs) return this.lastDeepScanResult;
+    const cooldown = minIntervalMs ?? this.deepScanCooldownMs;
+    if (!force && now - this.lastDeepScanAt < cooldown) return this.lastDeepScanResult;
     this.lastDeepScanAt = now;
     try {
       const { text } = readTail(this.logPath, this.deepScanBytes);
@@ -313,11 +334,25 @@ export class LogWatcher extends EventEmitter {
     // ── 种子（原有逻辑 + prev 兜底）─────────────────────────
     let seed = parseSeed(tail.text);
     let source = 'log';
-    if (seed === null && (this.currentSeed === null || force)) {
-      const deep = this.deepScan({ force });
+    /**
+     * v0.3.2 修复三处会给出**错误种子且不自愈**的交互缺陷：
+     *  1. force 强制重读不允许用上一局种子顶掉本局已确认的种子（旧代码 prev 兜底在
+     *     force 下也会跑，还把同种子去重短路掉，地图直接按上局种子重画）；
+     *  2. 手上只有 prev-log 兜底来的种子时**继续**深扫找本局真种子 —— 旧代码
+     *     currentSeed 一旦非 null 就永远跳过深扫，真种子即使在深扫窗口内也永不被发现；
+     *     为控制 IO，这种"确认性"深扫放宽到 confirmScanMs（30s）一次；
+     *  3. 深扫冷却返回的是上次扫描的陈旧结果，配合 2 会在下个确认周期自愈。
+     */
+    const needSeed = this.currentSeed === null || this.seedSource === 'prev-log';
+    if (seed === null && (needSeed || force)) {
+      const deep = this.deepScan({
+        force,
+        minIntervalMs: this.seedSource === 'prev-log' ? this.confirmScanMs : null,
+      });
       if (deep !== null) seed = deep;
     }
-    if (seed === null && (this.currentSeed === null || force)) {
+    // prev 兜底只在"完全没有种子"时借用上一会话的；force 重读也不允许走到这里
+    if (seed === null && this.currentSeed === null) {
       // 深扫也没有 → 上一会话的日志里找（来源明确标 prev-log，UI 才能如实告诉用户）
       const prev = this.prevLogSeed();
       if (prev) {
