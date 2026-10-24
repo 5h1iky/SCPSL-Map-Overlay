@@ -515,6 +515,9 @@ function registerIpc() {
   });
   ipcMain.handle('intent:setOverlay', (_event, patch = {}) => {
     if (patch.toggleVisible) toggleOverlay();
+    // v0.3.2：显式显示/隐藏。toggleVisible 是**取反**语义 —— 设置页"导出前先点亮覆盖层"
+    // 用它会在覆盖层已显示时反而把它藏掉，所以补一个幂等的 visible。
+    if (patch.visible !== undefined) setOverlayVisible(Boolean(patch.visible));
     if (patch.opacity !== undefined) settings.patch('overlay.opacity', patch.opacity);
     if (patch.autoFit !== undefined) settings.patch('overlay.autoFit', patch.autoFit);
     if (patch.showLabels !== undefined) settings.patch('overlay.showLabels', patch.showLabels);

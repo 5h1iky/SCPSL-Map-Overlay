@@ -493,7 +493,9 @@
       // 覆盖层隐藏时先点亮，让用户看见导出的就是当前这张图。
       $('export-png').disabled = true;
       try {
-        await api.intent.setOverlay({ toggleVisible: true });
+        // v0.3.2 修复：这里要的是"确保显示"，toggleVisible 是取反 ——
+        // 覆盖层已显示时点导出反而会把它藏掉。改用幂等的 visible:true。
+        await api.intent.setOverlay({ visible: true });
         const result = await api.intent.exportPng();
         if (result?.ok) {
           const r = await api.app.status();
