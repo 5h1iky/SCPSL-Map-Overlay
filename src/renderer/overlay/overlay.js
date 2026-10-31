@@ -267,10 +267,12 @@
     if (!roomTip || !room) return;
     const pois = state.layout?.pois ?? [];
     const poi = pois.find((p) => p.roomId === room.id) ?? null;
-    rtTitle.textContent = poi?.label ?? (room.roomName !== 'Unnamed' ? room.roomName : '无名走廊');
+    // v0.3.3：特殊房（U 型房 / 管道房 / A·B 电梯…）没有 POI，标题退回标志名
+    rtTitle.textContent = poi?.label ?? room.marker?.label ?? (room.roomName !== 'Unnamed' ? room.roomName : '无名走廊');
     const zone = ZONE_LABEL[room.zone] ?? room.zone ?? '—';
     const shape = SHAPE_LABEL[room.shape] ?? room.shape ?? '—';
-    rtIdentity.innerHTML = `${escapeHtml(zone)} · ${escapeHtml(shape)} · <b>${escapeHtml(room.prefab || '—')}</b> · 贴图 <b>${escapeHtml(room.outline?.mapIcon ?? '无')}</b>`;
+    const mark = room.marker ? ` · 标志 <b>${escapeHtml(room.marker.label)}</b>` : '';
+    rtIdentity.innerHTML = `${escapeHtml(zone)} · ${escapeHtml(shape)} · <b>${escapeHtml(room.prefab || '—')}</b> · 贴图 <b>${escapeHtml(room.outline?.mapIcon ?? '无')}</b>${mark}`;
     const connectorCount = (room.doors ?? []).length;
     rtGeo.innerHTML = `中心 <b>${room.cx.toFixed(1)}, ${room.cy.toFixed(1)}</b> · 连接器 <b>${connectorCount}</b>`;
     const badges = [];

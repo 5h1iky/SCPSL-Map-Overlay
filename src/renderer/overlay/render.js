@@ -58,6 +58,116 @@
   const FONT_ROOM = 'bold 10px Consolas, "Sarasa Mono SC", ui-monospace, monospace';
   const PAD = 16;
 
+  function boxesOverlap(a, b) {
+    return !(a.x > b.x + b.w || a.x + a.w < b.x || a.y > b.y + b.h || a.y + a.h < b.y);
+  }
+
+  /**
+   * v0.3.3：特殊房标志（issue #1「增加 U 型房 / 管道房 / 斜坡房标志」）
+   *
+   * 数据全部来自主进程的 `layout.markers`（data/room-markers-<版本>.json 按 prefab / 房名匹配），
+   * 渲染端不知道为什么是特殊房，只负责画：
+   *   · 房间中心一个圆角徽标：短字符（A / B / U / 管 / 坡 / 杂）+ 分类色描边
+   *   · 开了「显示 POI 标签」时补一行短标签（A 电梯 / 管道房 …），并登记占位盒子，
+   *     让后面的 POI 标签自动避开它
+   *
+   * 电梯（kind='elevator'）额外加一圈淡色光环：A/B 电梯在轻收-重收之间成对出现，
+   * 光环让它在密集走廊里也一眼能找到（这正是 issue 里"有时无法标出 A、B 电梯"的点）。
+   */
+  function drawRoomMarkers(ctx, markers, t, { showLabels = true, labelBoxes = [] } = {}) {
+    if (!Array.isArray(markers) || markers.length === 0) return [];
+    const clipX0 = t.panelX + 2;
+    const clipX1 = t.panelX + t.panelW - 2;
+    const clipY0 = t.panelY + 2;
+    const clipY1 = t.panelY + t.panelH - 2;
+    const drawn = [];
+    const baseAlpha = ctx.globalAlpha;
+    // 徽标尺寸跟着房间大小走：全设施视图里一格只有二十来像素，固定 15px 会把房间糊死
+    const roomPx = 15 * t.k;
+    const badgeH = Math.max(10, Math.min(15, roomPx * 0.55));
+    const badgeFont = `bold ${Math.max(7, Math.min(10, Math.round(badgeH * 0.72)))}px Consolas, "Sarasa Mono SC", ui-monospace, monospace`;
+    // 低优先级先画、高优先级后画（后画的压在上面）
+    const ordered = markers.slice().sort((a, b) => (a.priority || 0) - (b.priority || 0));
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const marker of ordered) {
+      const x = t.originX + marker.x * t.k;
+      const y = t.originY + marker.y * t.k;
+      if (x < clipX0 || x > clipX1 || y < clipY0 || y > clipY1) continue;
+      const color = marker.color || '#FFC24D';
+      const text = String(marker.short ?? '').trim();
+      ctx.font = badgeFont;
+      const textW = text ? ctx.measureText(text).width : 0;
+      const w = Math.max(badgeH, Math.round(textW) + 9);
+      const h = badgeH;
+      if (marker.kind === 'elevator') {
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(8, w / 2 + 3), 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = baseAlpha * 0.42;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.globalAlpha = baseAlpha;
+      }
+      ctx.fillStyle = 'rgba(6,8,12,0.86)';
+      roundRect(ctx, x - w / 2, y - h / 2, w, h, 4);
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.4;
+      roundRect(ctx, x - w / 2 + 0.7, y - h / 2 + 0.7, w - 1.4, h - 1.4, 3.4);
+      ctx.stroke();
+      if (text) {
+        ctx.fillStyle = color;
+        ctx.fillText(text, x, y + 0.5);
+      }
+      drawn.push({ marker, x, y, w, h });
+    }
+    ctx.restore();
+
+    if (!showLabels) return drawn;
+    // 地图缩得很小时（默认 auto-fit ≈ 0.35 屏高，一格只有三十几像素）只留徽标：
+    // 「管」「坡」「U」「A/B」本身就能认，硬塞中文标签会跟 POI 标签糊成一片。
+    // 放大一档（Ctrl+4）或大屏出图时标签自动出现。
+    if (roomPx < 46) return drawn;
+    // 高优先级的标签先占位（电梯 > 特殊房），后面的只往空位放
+    for (const item of drawn.slice().reverse()) {
+      const { marker, x, y, w, h } = item;
+      if (marker.showLabel === false || !marker.label) continue;
+      ctx.font = FONT_SMALL;
+      const lw = ctx.measureText(marker.label).width + 10;
+      // 标签尽量放到**房间外框之外**（房间 = 1 格 = 15 世界单位），别糊在走廊贴图上
+      const roomHalf = 7.5 * t.k;
+      const offsetX = Math.max(w / 2, roomHalf) + 5;
+      const offsetY = Math.max(h / 2, roomHalf);
+      const candidates = [
+        { x: x + offsetX, y: y - 8 },
+        { x: x - offsetX - lw, y: y - 8 },
+        { x: x - lw / 2, y: y + offsetY + 2 },
+        { x: x - lw / 2, y: y - offsetY - 18 },
+      ];
+      let placed = null;
+      for (const candidate of candidates) {
+        const px = Math.min(Math.max(candidate.x, clipX0), Math.max(clipX0, clipX1 - lw));
+        const py = Math.min(Math.max(candidate.y, clipY0), Math.max(clipY0, clipY1 - 16));
+        const box = { x: px, y: py, w: lw, h: 16 };
+        if (!labelBoxes.some((b) => boxesOverlap(box, b))) {
+          placed = box;
+          break;
+        }
+        if (!placed) placed = box;
+      }
+      if (!placed) continue;
+      const box = chip(ctx, marker.label, placed.x, placed.y, {
+        align: 'left', baseline: 'top', font: FONT_SMALL, color: marker.color || '#FFC24D', bg: 'rgba(6,8,12,0.78)',
+      });
+      labelBoxes.push(box);
+      item.label = box;
+    }
+    return drawn;
+  }
+
   /**
    * 房间图标贴图（SCP:SL 房间图标，Northwood Studios，CC BY-SA 3.0）
    *
@@ -617,6 +727,11 @@
       ctx.fill();
     }
 
+    // ── 特殊房标志（v0.3.3，issue #1）─────────────────────
+    // U 型房 / 管道房 / 斜坡房 / 杂物房，以及轻收-重收两侧的 A·B 电梯。
+    // 先于 POI 标签落位：保证「A 电梯」这类短标签不会被别的标签挤掉。
+    drawRoomMarkers(ctx, layout.markers ?? [], t, { showLabels, labelBoxes });
+
     if (showLabels) {
       // 先放路线端点标签，再按优先级放其余
       const clipX0 = t.panelX + 2;
@@ -745,7 +860,7 @@
 
   window.OverlayRender = {
     draw, computeTransform, toScreen, chip, roundRect, wallRuns, loadIcons, iconsStatus,
-    roomAt, composeExport, lastDrawState,
+    roomAt, composeExport, lastDrawState, drawRoomMarkers,
     C, FONT, PAD,
   };
 })();

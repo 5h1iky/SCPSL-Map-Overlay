@@ -13,6 +13,7 @@ import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { MapService } from './map-service.js';
 import { classifyRooms, candidatesFor, loadPoiTableFromFile, kindMeta, listRouteTargets } from './poi-catalog.js';
+import { loadRoomMarkersFromFile } from './room-markers.js';
 import { buildGraph, buildPortalEdges, planRoute, nearestTarget, dijkstra, countPortals } from './route-planner.js';
 import { buildLayout } from './layout-builder.js';
 import { versionGate } from './version-guard.js';
@@ -20,7 +21,7 @@ import { ROUTE_PRESETS, VIEWS, VIEW_LABEL, STYLE, ZONE_META, ZONE_ORDER } from '
 import { basename } from 'node:path';
 
 export class AppController extends EventEmitter {
-  constructor({ generatorEntry, poiTablePath, iconManifestPath = null, logger = null, settings = null } = {}) {
+  constructor({ generatorEntry, poiTablePath, iconManifestPath = null, roomMarkerPath = null, logger = null, settings = null } = {}) {
     super();
     this.logger = logger;
     this.settings = settings;
@@ -30,6 +31,9 @@ export class AppController extends EventEmitter {
     /** 官方房间图标清单（SCP:SL wiki，CC BY-SA 3.0）—— 交给渲染进程画形状 */
     this.iconManifestPath = iconManifestPath;
     this.iconManifest = null;
+    /** v0.3.3：特殊房标志表（U 型房 / 管道房 / 斜坡房 / A·B 电梯）—— 纯显示层 */
+    this.roomMarkerPath = roomMarkerPath;
+    this.roomMarkers = null;
     this.gameVersion = null;
     this.gameVersionSource = null;
 
@@ -48,7 +52,11 @@ export class AppController extends EventEmitter {
     this.graph = null;
     this.route = null;
     this.routePresetId = null;
-    this.viewZone = settings?.data?.lastZone && VIEWS.includes(settings.data.lastZone) ? settings.data.lastZone : 'LightContainment';
+    this.viewZone = settings?.data?.lastZone && VIEWS.includes(settings.data.lastZone)
+      // v0.3.3：上次停在地表视图、但用户已经关掉「显示地表区域」→ 启动时回全设施
+      && (settings.data.lastZone !== 'Surface' || settings.data.overlay?.showSurfaceBand !== false)
+      ? settings.data.lastZone
+      : 'LightContainment';
     this.banner = null;
     this.lastLayout = null;
     this.lastGenerateMs = null;
@@ -86,6 +94,16 @@ export class AppController extends EventEmitter {
       } catch (error) {
         this.iconManifest = null;
         this.logger?.warn?.('房间图标清单读取失败，退回块+臂渲染', { detail: error.message });
+      }
+    }
+    // v0.3.3：特殊房标志表（读不到只是没有徽标，其余功能照常）
+    if (this.roomMarkerPath) {
+      try {
+        this.roomMarkers = loadRoomMarkersFromFile(this.roomMarkerPath);
+        this.logger?.info('特殊房标志表就绪', { count: this.roomMarkers.markers.length, version: this.roomMarkers.version });
+      } catch (error) {
+        this.roomMarkers = null;
+        this.logger?.warn?.('特殊房标志表读取失败，本次不画特殊房徽标', { detail: error.message });
       }
     }
     this.recomputeBanner();
@@ -284,18 +302,30 @@ export class AppController extends EventEmitter {
     return this.selectRoute(next.id);
   }
 
+  /**
+   * v0.3.3：参与循环的视图列表。
+   * 「显示地表区域」关掉后，Ctrl+2 不再停在只有 1 个房间的地表视图上 ——
+   * 否则用户以为关掉了，切视图还是会翻到那一页（issue #1 第 3 条）。
+   */
+  visibleViews() {
+    const showSurface = this.settings?.data?.overlay?.showSurfaceBand !== false;
+    return showSurface ? VIEWS : VIEWS.filter((zone) => zone !== 'Surface');
+  }
+
   setView(zone) {
     if (!VIEWS.includes(zone)) return this.lastLayout;
-    this.viewZone = zone;
-    this.settings?.patch('lastZone', zone);
+    const next = this.visibleViews().includes(zone) ? zone : 'All';
+    this.viewZone = next;
+    this.settings?.patch('lastZone', next);
     this.buildLayoutNow();
     this.emitStatus();
     return this.lastLayout;
   }
 
   cycleView(direction = 1) {
-    const index = VIEWS.indexOf(this.viewZone);
-    const next = VIEWS[(index + direction + VIEWS.length) % VIEWS.length];
+    const list = this.visibleViews();
+    const index = list.indexOf(this.viewZone);
+    const next = list[(index + direction + list.length) % list.length];
     return this.setView(next);
   }
 
@@ -420,6 +450,7 @@ export class AppController extends EventEmitter {
       viewZone: this.viewZone,
       banner: this.banner,
       iconManifest: this.iconManifest,
+      roomMarkers: this.roomMarkers,
       includeZones,
     });
     this.lastLayoutMs = Date.now() - started;
@@ -471,6 +502,9 @@ export class AppController extends EventEmitter {
       timing: { generateMs: this.lastGenerateMs, layoutMs: this.lastLayoutMs },
       poiTableVersion: this.poiTable?.version ?? null,
       poiTableFile: this.poiTablePath ? basename(this.poiTablePath) : null,
+      /** v0.3.3：特殊房标志（U 型房 / 管道房 / 斜坡房 / A·B 电梯） */
+      roomMarkerTableVersion: this.roomMarkers?.version ?? null,
+      roomMarkerCount: this.lastLayout?.markers?.length ?? 0,
       kindMeta: this.poiTable?.kinds ?? {},
     };
   }

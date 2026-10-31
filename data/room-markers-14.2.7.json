@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "templateVersion": "14.2.7",
+  "source": "对 14.2.7 模板全部 143 个 prefab 枚举后人工确认：U 型房 / 管道房 / 斜坡房 / 杂物房这四类特殊走廊在每张图上各只出现一次，且几何上（连接器位置）与普通走廊完全相同 —— 只能靠 prefabName 区分，不能靠 shape。",
+  "notes": [
+    "U 型房 = prefab HCZ_Straight_C（14.2.7 里唯一的 Straight 特殊变体）；管道房 = HCZ_Straight_PipeRoom；斜坡房 = HCZ_Intersection_Ramp；杂物房 = HCZ_Intersection_Junk。",
+    "A / B 电梯按 room.name 标注：LczCheckpointA/B（轻收容侧）与 HczCheckpointA/B（重收容侧）。14.2.7 已不存在 ElevatorA/ElevatorB 这种房名，检查点房间本身就是电梯间。",
+    "这一层是纯显示标记：不参与 POI 分类、路线端点与寻路，所以加上标志不会改变任何现有路线的走向。",
+    "节日变体的 prefabName 会带 ' Christmas' / ' Halloween' 后缀，匹配前统一剥掉（见 room-markers.js）。"
+  ],
+  "markers": [
+    {
+      "id": "elevator-a",
+      "kind": "elevator",
+      "label": "A 电梯",
+      "short": "A",
+      "color": "#4DA6FF",
+      "priority": 90,
+      "roomNames": ["LczCheckpointA", "HczCheckpointA"]
+    },
+    {
+      "id": "elevator-b",
+      "kind": "elevator",
+      "label": "B 电梯",
+      "short": "B",
+      "color": "#FFA23A",
+      "priority": 90,
+      "roomNames": ["LczCheckpointB", "HczCheckpointB"]
+    },
+    {
+      "id": "u-room",
+      "kind": "special",
+      "label": "U 型房",
+      "short": "U",
+      "color": "#FFC24D",
+      "priority": 58,
+      "prefabs": ["HCZ_Straight_C"]
+    },
+    {
+      "id": "pipe-room",
+      "kind": "special",
+      "label": "管道房",
+      "short": "管",
+      "color": "#68D6E8",
+      "priority": 58,
+      "prefabs": ["HCZ_Straight_PipeRoom"]
+    },
+    {
+      "id": "ramp-room",
+      "kind": "special",
+      "label": "斜坡房",
+      "short": "坡",
+      "color": "#FF9F5A",
+      "priority": 58,
+      "prefabs": ["HCZ_Intersection_Ramp"]
+    },
+    {
+      "id": "junk-room",
+      "kind": "special",
+      "label": "杂物房",
+      "short": "杂",
+      "color": "#C08A5A",
+      "priority": 56,
+      "prefabs": ["HCZ_Intersection_Junk"]
+    }
+  ]
+}

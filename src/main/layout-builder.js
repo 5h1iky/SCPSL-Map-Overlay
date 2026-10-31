@@ -12,6 +12,7 @@
 import { ZONE_META, ZONE_ORDER } from '../shared/constants.js';
 import { buildRoomOutline, CELL, CORRIDOR, ROOM_ICON_BASE } from './room-shape.js';
 import { interiorPath } from './route-geometry.js';
+import { markerForRoom } from './room-markers.js';
 
 const CELLBOX = { w: 15, h: 15 };
 const BAND_GAP = 26; // 分带之间的空隙（世界单位）
@@ -135,6 +136,7 @@ function doorsOf(room, bounds, zone) {
  * @param {string} opts.viewZone      'All' | zone 名
  * @param {object} opts.banner        { level, text } | null
  * @param {number} opts.columns       全设施视图的分带列数（默认 2，排成网格而不是一条竖列）
+ * @param {object} opts.roomMarkers   特殊房标志表（data/room-markers-<版本>.json 加载结果）
  */
 export function buildLayout(map, opts = {}) {
   const {
@@ -146,9 +148,12 @@ export function buildLayout(map, opts = {}) {
     routeHighlight = true,
     columns = 2,
     iconManifest = null,
+    roomMarkers = null,
   } = opts;
   /** 房间→贴图映射表（含 byRoom / categories / shapeFallback） */
   const iconTable = iconManifest && iconManifest.byRoom ? iconManifest : null;
+  /** 特殊房标志表（U 型房 / 管道房 / 斜坡房 / A·B 电梯…），空表不影响出图 */
+  const markerTable = roomMarkers && roomMarkers.markers?.length ? roomMarkers : null;
 
   const isAll = viewZone === 'All';
   const zones = isAll ? includeZones : [viewZone];
@@ -194,6 +199,7 @@ export function buildLayout(map, opts = {}) {
 
   const bands = [];
   const rooms = [];
+  const markers = [];
   const projectedPois = [];
   const bandByZone = new Map();
   let offsetY = 0;
@@ -242,6 +248,8 @@ export function buildLayout(map, opts = {}) {
       const rect = projectRoom(room, bounds, zone);
       const poi = poiByRoom.get(room.id) ?? null;
       const outline = outlineOf(room, bounds, { x: band.x, y: band.y }, iconTable, zone);
+      /** v0.3.3：特殊房标志（U 型房 / 管道房 / 斜坡房 / 杂物房 / A·B 电梯），纯显示层 */
+      const marker = markerTable ? markerForRoom(markerTable, room) : null;
       rooms.push({
         id: room.id,
         zone,
@@ -254,6 +262,8 @@ export function buildLayout(map, opts = {}) {
         cy: outline.center.y,
         /** 方案 B：房间轮廓（中心块 + 走廊臂），渲染进程据此画形状 */
         outline,
+        /** v0.3.3：特殊房标志（渲染进程画 A/B 徽标与「管道房」这类短标签） */
+        marker,
         angleDeg: room.render?.angleDeg ?? 0,
         shape: room.shape?.name ?? 'Undefined',
         roomName: room.name?.name ?? 'Unnamed',
@@ -264,6 +274,17 @@ export function buildLayout(map, opts = {}) {
         isStart: route?.fromRoomId === room.id,
         isEnd: route?.toRoomId === room.id,
       });
+      if (marker) {
+        markers.push({
+          ...marker,
+          roomId: room.id,
+          zone,
+          roomName: room.name?.name ?? 'Unnamed',
+          prefab: room.prefabName ?? '',
+          x: outline.center.x,
+          y: outline.center.y,
+        });
+      }
     }
 
     for (const poi of pois) {
@@ -305,6 +326,9 @@ export function buildLayout(map, opts = {}) {
     bandGap: BAND_GAP,
     rooms,
     pois: projectedPois,
+    /** v0.3.3：特殊房标志（已在分带坐标系里，渲染进程直接画徽标 + 短标签） */
+    markers,
+    markerTableVersion: roomMarkers?.version ?? null,
     route: routeOut,
     banner,
     diagnostics: map.diagnostics ?? null,

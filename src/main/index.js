@@ -53,6 +53,7 @@ const dataDir = join(appRoot, 'data');
 const generatorEntry = join(dataDir, 'vendor/map-seed/src/index.js');
 const poiTablePath = join(dataDir, 'poi-map-14.2.7.json');
 const iconManifestPath = join(dataDir, 'room-icons.json');
+const roomMarkerPath = join(dataDir, 'room-markers-14.2.7.json');
 const preloadPath = join(appRoot, 'src/preload/overlay.cjs');
 
 const COMPLIANCE_TEXT = `本工具做什么：
@@ -530,7 +531,11 @@ function registerIpc() {
     if (patch.scaleIndex !== undefined) settings.patch('overlay.scaleIndex', patch.scaleIndex);
     if (patch.editMode !== undefined) setEditMode(patch.editMode);
     // 全设施视图的地表开关会影响分带排布 → 重新出图
-    if (bandChanged) controller.buildLayoutNow();
+    if (bandChanged) {
+      // v0.3.3：关掉地表时如果正停在地表视图，拉回全设施（否则会卡在一个已隐藏的视图上）
+      if (!settings.data.overlay.showSurfaceBand && controller.viewZone === 'Surface') controller.setView('All');
+      else controller.buildLayoutNow();
+    }
     // v0.3.1：显示器选择（null = 主屏）。纯窗口搬移，不探测、不起子进程。
     if (patch.displayId !== undefined) {
       const next = patch.displayId === null || patch.displayId === '' ? null : Number(patch.displayId);
@@ -726,7 +731,7 @@ async function bootstrap() {
   });
   logger.info('启动', { version: app.getVersion(), electron: process.versions.electron, settings: settings.filePath });
 
-  controller = new AppController({ generatorEntry, poiTablePath, iconManifestPath, logger, settings });
+  controller = new AppController({ generatorEntry, poiTablePath, iconManifestPath, roomMarkerPath, logger, settings });
   /**
    * v0.3.2 修复：事件监听必须**先于** controller.init() 挂上。
    * init() 在生成器不可用 / POI 表读取失败时会 emit('error')，旧顺序（先 init 后挂监听）
