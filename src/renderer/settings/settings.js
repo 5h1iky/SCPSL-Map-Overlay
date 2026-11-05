@@ -26,7 +26,7 @@
     $('pill-seed').textContent = `种子 ${status.seed ?? '—'}${status.seedSource === 'prev-log' ? '（上一局）' : ''}`;
     $('pill-seed').className = `pill ${status.seed ? (status.seedSource === 'prev-log' ? 'warn' : 'ok') : ''}`;
     const v = status.version ?? {};
-    $('pill-version').textContent = `游戏 ${v.game ?? '?'} · 模板 ${v.template ?? '?'}`;
+    $('pill-version').textContent = `游戏 ${v.game ?? '?'} / 模板 ${v.template ?? '?'}`;
     $('pill-version').className = `pill ${v.match ? 'ok' : v.game ? 'warn' : ''}`;
     const w = boot?.watcher ?? {};
     const watcherText = w.exists === false ? '日志未找到' : w.state === 'degraded' ? '读取异常' : '监听中';
@@ -180,14 +180,17 @@
     for (const preset of presets) {
       const label = document.createElement('label');
       const checked = (settings.presets ?? []).includes(preset.id);
-      label.innerHTML = `<input type="checkbox" ${checked ? 'checked' : ''} data-preset="${preset.id}" />
+      const enabled = settings.routes?.showPresets !== false;
+      label.innerHTML = `<input type="checkbox" ${checked ? 'checked' : ''} ${enabled ? '' : 'disabled'} data-preset="${preset.id}" />
         <span>${preset.label}</span><span class="hint">${preset.hint ?? ''}</span>`;
+      if (!enabled) label.classList.add('disabled');
       label.querySelector('input').addEventListener('change', (event) => {
         const current = new Set(settingsCache.presets ?? []);
         if (event.target.checked) current.add(preset.id);
         else current.delete(preset.id);
         api.intent.setPresets([...current]).then((result) => {
           settingsCache = result.settings ?? settingsCache;
+          applySettings(settingsCache);
           applyStatus(result);
         });
       });
@@ -350,14 +353,29 @@
     $('logLevel').value = settings.logLevel ?? 'info';
     $('opacity').value = settings.overlay.opacity;
     $('opacityValue').textContent = Number(settings.overlay.opacity).toFixed(2);
-    $('scaleIndex').value = settings.overlay.scaleIndex;
-    const steps = boot?.meta?.scaleSteps ?? [0.8, 1, 1.3, 1.6];
-    $('scaleValue').textContent = `${Number(steps[settings.overlay.scaleIndex] ?? 1).toFixed(2)}×`;
+    const scale = Math.max(0.25, Math.min(4, Number(settings.overlay.scale) || 1));
+    $('scale').value = scale;
+    $('scaleValue').textContent = `${scale.toFixed(2)}×`;
     $('autoFit').checked = Boolean(settings.overlay.autoFit);
     $('showLabels').checked = Boolean(settings.overlay.showLabels);
     $('colorByCategory').checked = settings.overlay.colorByCategory !== false;
     $('showSurfaceBand').checked = settings.overlay.showSurfaceBand !== false;
     $('smartVisibility').checked = Boolean(settings.overlay.smartVisibility);
+    // v0.3.4：地图外组件显隐 + 状态栏字段
+    const chrome = settings.overlay.chrome ?? {};
+    $('chromeStatusBar').checked = chrome.statusBar !== false;
+    $('chromeLegend').checked = chrome.legend !== false;
+    $('chromeEditHint').checked = chrome.editHint !== false;
+    const statusBar = settings.statusBar ?? {};
+    $('sbShowSeed').checked = statusBar.seed !== false;
+    $('sbShowGame').checked = statusBar.game !== false;
+    $('sbShowServer').checked = statusBar.server !== false;
+    $('sbShowHoliday').checked = statusBar.holiday !== false;
+    $('sbShowView').checked = statusBar.view !== false;
+    $('sbShowRoute').checked = statusBar.route !== false;
+    $('sbShowVersion').checked = statusBar.version !== false;
+    $('sbShowBanner').checked = statusBar.banner !== false;
+    $('showPresetRoutes').checked = settings.routes?.showPresets !== false;
     renderDisplays(settings);
     // v0.3.1：页脚显示当前应用版本（+ 运行时版本，便于反馈问题时对得上）
     const appVersion = boot?.meta?.appVersion ?? '?';
@@ -420,6 +438,14 @@
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
+  /** v0.3.4：设置页的组件显隐 / 状态栏字段 / 预设路线开关，保存后立即广播到覆盖层。 */
+  async function saveSetting(patch) {
+    const r = await api.settings.set(patch);
+    if (r?.settings) applySettings(r.settings);
+    applyStatus(r);
+    return r;
+  }
+
   function bind() {
     $('autoStart').addEventListener('change', (e) => api.app.setAutoStart(e.target.checked).then(applySettings));
     $('visibleOnStart').addEventListener('change', (e) => api.settings.set({ overlay: { visibleOnStart: e.target.checked } }).then((r) => applySettings(r.settings)));
@@ -450,11 +476,30 @@
       $('opacityValue').textContent = Number(e.target.value).toFixed(2);
       api.intent.setOverlay({ opacity: Number(e.target.value) });
     });
-    $('scaleIndex').addEventListener('input', (e) => {
-      const steps = boot?.meta?.scaleSteps ?? [0.8, 1, 1.3, 1.6];
-      $('scaleValue').textContent = `${Number(steps[e.target.value] ?? 1).toFixed(2)}×`;
-      api.intent.setScaleIndex(Number(e.target.value));
+    $('scale').addEventListener('input', (e) => {
+      const value = Number(e.target.value);
+      $('scaleValue').textContent = `${value.toFixed(2)}×`;
+      api.intent.setScale(value);
     });
+    // v0.3.4：地图外组件显隐
+    $('chromeStatusBar').addEventListener('change', (e) => saveSetting({ overlay: { chrome: { statusBar: e.target.checked } } }));
+    $('chromeLegend').addEventListener('change', (e) => saveSetting({ overlay: { chrome: { legend: e.target.checked } } }));
+    $('chromeEditHint').addEventListener('change', (e) => saveSetting({ overlay: { chrome: { editHint: e.target.checked } } }));
+    // v0.3.4：顶部状态栏字段
+    const statusFields = {
+      sbShowSeed: 'seed',
+      sbShowGame: 'game',
+      sbShowServer: 'server',
+      sbShowHoliday: 'holiday',
+      sbShowView: 'view',
+      sbShowRoute: 'route',
+      sbShowVersion: 'version',
+      sbShowBanner: 'banner',
+    };
+    for (const [id, field] of Object.entries(statusFields)) {
+      $(id).addEventListener('change', (e) => saveSetting({ statusBar: { [field]: e.target.checked } }));
+    }
+    $('showPresetRoutes').addEventListener('change', (e) => saveSetting({ routes: { showPresets: e.target.checked } }));
     $('autoFit').addEventListener('change', (e) => api.intent.setOverlay({ autoFit: e.target.checked }));
     $('showLabels').addEventListener('change', (e) => api.intent.setOverlay({ showLabels: e.target.checked }));
     $('colorByCategory').addEventListener('change', (e) => api.intent.setOverlay({ colorByCategory: e.target.checked }));

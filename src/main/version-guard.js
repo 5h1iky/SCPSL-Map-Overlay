@@ -87,6 +87,25 @@ export function normalizeVersion(version) {
   return String(version).replace(/\.+$/, '').trim();
 }
 
+/**
+ * v0.3.4：游戏补丁版本兼容。
+ * 地图模板只依赖 major.minor 的地图生成结构；14.2.7 → 14.2.8 这类补丁升级
+ * 不应再标红。只有 major.minor 变化才视为模板可能不兼容。
+ */
+export function baseVersion(version) {
+  const normalized = normalizeVersion(version);
+  if (!normalized) return null;
+  const parts = normalized.split('.');
+  return parts.length >= 2 ? `${parts[0]}.${parts[1]}` : parts[0];
+}
+
+export function compareBaseVersions(a, b) {
+  const ba = baseVersion(a);
+  const bb = baseVersion(b);
+  if (!ba || !bb) return ba === bb ? 0 : 1;
+  return compareVersions(ba, bb);
+}
+
 /** 主次版本比较：14.2.7 vs 14.2.7 → 0；14.3.0 > 14.2.7 → 1 */
 export function compareVersions(a, b) {
   const pa = normalizeVersion(a)?.split('.').map(Number) ?? [];
@@ -109,26 +128,27 @@ export function versionGate({ gameVersion, templateVersion, poiVersion }) {
   const t = normalizeVersion(templateVersion);
   const p = normalizeVersion(poiVersion);
   if (!g) {
-    return { level: 'info', code: 'GAME_VERSION_UNKNOWN', stale: false, text: '无法确认游戏版本（未找到日志），仍按模板使用' };
+    return { level: 'info', code: 'GAME_VERSION_UNKNOWN', stale: false, text: '版本未知 · 按模板使用' };
   }
   if (!t) {
-    return { level: 'warn', code: 'TEMPLATE_UNKNOWN', stale: true, text: `游戏版本 ${g}，但读不到模板版本` };
+    return { level: 'warn', code: 'TEMPLATE_UNKNOWN', stale: true, text: '模板版本未知' };
   }
-  if (compareVersions(t, g) !== 0) {
+  if (compareBaseVersions(t, g) !== 0) {
     return {
       level: 'error',
       code: 'TEMPLATE_MISMATCH',
       stale: true,
-      text: `地图模板为 ${t}，当前游戏为 ${g}，布局可能不符`,
+      // 文案刻意压缩：状态栏空间有限，只保留两个关键版本号
+      text: `模板 ${t} / 游戏 ${g}`,
     };
   }
-  if (p && compareVersions(p, t) !== 0) {
+  if (p && compareBaseVersions(p, t) !== 0) {
     return {
       level: 'warn',
       code: 'POI_TABLE_MISMATCH',
       stale: false,
-      text: `POI 表为 ${p}，与模板 ${t} 不一致，部分点位可能缺失`,
+      text: `POI ${p} / 模板 ${t}`,
     };
   }
-  return { level: 'info', code: 'OK', stale: false, text: `游戏版本 ${g} · 模板 ${t} · 匹配` };
+  return { level: 'info', code: 'OK', stale: false, text: `v${g} · 兼容` };
 }

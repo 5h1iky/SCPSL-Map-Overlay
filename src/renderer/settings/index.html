@@ -103,10 +103,17 @@
         <span class="value" id="opacityValue">0.75</span>
       </div>
       <div class="row">
-        <span class="label">缩放档位</span>
-        <input type="range" id="scaleIndex" min="0" max="3" step="1" />
+        <span class="label">缩放（无极）</span>
+        <input type="range" id="scale" min="0.25" max="4" step="0.01" />
         <span class="value" id="scaleValue">1.00×</span>
         <label class="inline"><input type="checkbox" id="autoFit" /> 自动适配</label>
+      </div>
+      <div class="row">
+        <span class="label">显示组件</span>
+        <label class="inline"><input type="checkbox" id="chromeStatusBar" /> 顶部状态栏</label>
+        <label class="inline"><input type="checkbox" id="chromeLegend" /> 底部图例</label>
+        <label class="inline"><input type="checkbox" id="chromeEditHint" /> 编辑提示</label>
+        <span class="hint">编辑模式顶部也可点「仅地图」快速全部隐藏</span>
       </div>
       <label class="row"><input type="checkbox" id="showLabels" /> <span>显示 POI 标签</span></label>
       <label class="row"><input type="checkbox" id="colorByCategory" /> <span>重要区域按分类上色</span><em>SCP 收容 / 核心 / 安保 / 检查点 用分类色，其余用统一灰；关掉则整张图同色剪影</em></label>
@@ -130,6 +137,21 @@
         <button class="btn primary" id="toggle-overlay">显示 / 隐藏覆盖层</button>
         <button class="btn" id="export-png">导出当前地图 PNG</button>
         <span class="hint">热键 <code id="hk-toggle-hint">Ctrl+1</code>；编辑模式可拖动（<code id="hk-edit-hint">Ctrl+0</code>）；导出热键 <code id="hk-export-hint">Ctrl+6</code></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>顶部状态栏</h2>
+      <div class="row"><span class="hint">逐项选择顶部状态栏显示哪些内容；关闭「顶部状态栏」总开关后这里全部隐藏。</span></div>
+      <div class="checks">
+        <label><input type="checkbox" id="sbShowSeed" /> 种子</label>
+        <label><input type="checkbox" id="sbShowGame" /> 游戏状态</label>
+        <label><input type="checkbox" id="sbShowServer" /> 服务器 IP</label>
+        <label><input type="checkbox" id="sbShowHoliday" /> 节日活动</label>
+        <label><input type="checkbox" id="sbShowView" /> 当前视图</label>
+        <label><input type="checkbox" id="sbShowRoute" /> 当前路线</label>
+        <label><input type="checkbox" id="sbShowVersion" /> 游戏 / 模板版本</label>
+        <label><input type="checkbox" id="sbShowBanner" /> 版本警告</label>
       </div>
     </section>
 
@@ -162,8 +184,9 @@
 
     <section class="card">
       <h2>路线预设</h2>
+      <label class="row"><input type="checkbox" id="showPresetRoutes" /> <span>显示预设路线</span><em>关闭后地图不再绘制内置预设路线，<code id="hk-route-hint">Ctrl+3</code> 只循环自定义路线；自定义路线不受影响</em></label>
       <div id="presetList" class="presets"></div>
-      <div class="row"><span class="hint">勾选的预设会进入 <code id="hk-route-hint">Ctrl+3</code> 的循环。</span></div>
+      <div class="row"><span class="hint">勾选的预设会进入 <code id="hk-route-hint-2">Ctrl+3</code> 的循环。</span></div>
     </section>
 
     <section class="card">

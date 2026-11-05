@@ -269,6 +269,10 @@ function overlayState() {
     scaleIndex: settings.data.overlay.scaleIndex,
     autoFit: settings.data.overlay.autoFit,
     anchor: settings.data.overlay.anchor,
+    /** v0.3.4：地图以外覆盖层组件的显隐 */
+    chrome: { ...settings.data.overlay.chrome },
+    /** v0.3.4：顶部状态栏逐字段配置 */
+    statusBar: { ...settings.data.statusBar },
     showLabels: settings.data.overlay.showLabels,
     /** 重要区域按分类上色（关掉 = 整张图同色剪影） */
     colorByCategory: settings.data.overlay.colorByCategory,
@@ -476,6 +480,7 @@ function registerIpc() {
     const noticeJustAcknowledged = patch?.noticeAcknowledged === true && !settings.data.noticeAcknowledged;
     const routesChanged = patch?.customRoutes !== undefined;
     const presetsChanged = patch?.presets !== undefined;
+    const routeDisplayChanged = patch?.routes?.showPresets !== undefined;
     settings.set(patch ?? {});
     logger?.setLevel(settings.data.logLevel);
     if (hotkeysChanged && !captureMode) {
@@ -487,10 +492,9 @@ function registerIpc() {
       settings.patch('overlay.visibleOnStart', true);
       setOverlayVisible(true);
     }
-    // 改了自定义路线：立刻在当前种子上重算（用户改完就能看到效果）
-    if ((routesChanged || presetsChanged) && controller.map) {
-      const stillThere = controller.routePresetId && controller.routeById(controller.routePresetId);
-      controller.selectRoute(stillThere ? controller.routePresetId : controller.defaultPresetId());
+    // 改了路线配置：立刻在当前种子上重算（用户改完就能看到效果）
+    if ((routesChanged || presetsChanged || routeDisplayChanged) && controller.map) {
+      controller.refreshRoutesAfterSettings();
     }
     applySettingsSideEffects();
     broadcastStatus();
@@ -502,6 +506,8 @@ function registerIpc() {
   ipcMain.handle('intent:setRoute', (_event, target) => { controller.selectRoute(target?.presetId ?? target); return statusPayload(); });
   ipcMain.handle('intent:cycleRoute', (_event, { direction = 1 } = {}) => { controller.cycleRoute(direction); return statusPayload(); });
   ipcMain.handle('intent:setScaleIndex', (_event, { index }) => { controller.setScaleIndex(index); pushOverlayState(); return statusPayload(); });
+  /** v0.3.4：连续缩放（滚轮 / 拖边 / 设置滑块共用） */
+  ipcMain.handle('intent:setScale', (_event, { scale } = {}) => { controller.setScale(scale); pushOverlayState(); return statusPayload(); });
   ipcMain.handle('intent:cycleScale', (_event, { direction = 1 } = {}) => { controller.cycleScale(direction); pushOverlayState(); return statusPayload(); });
   ipcMain.handle('intent:setSeed', (_event, { seed }) => {
     const value = validateSeed(seed);
@@ -524,6 +530,11 @@ function registerIpc() {
     if (patch.showLabels !== undefined) settings.patch('overlay.showLabels', patch.showLabels);
     if (patch.colorByCategory !== undefined) settings.patch('overlay.colorByCategory', patch.colorByCategory);
     if (patch.smartVisibility !== undefined) settings.patch('overlay.smartVisibility', Boolean(patch.smartVisibility));
+    if (patch.scale !== undefined) settings.patch('overlay.scale', Math.max(0.25, Math.min(4, Number(patch.scale) || 1)));
+    // v0.3.4：编辑模式快捷勾选地图外组件显隐
+    if (patch.chrome && typeof patch.chrome === 'object') {
+      settings.patch('overlay.chrome', { ...settings.data.overlay.chrome, ...patch.chrome });
+    }
     const bandChanged = patch.showSurfaceBand !== undefined
       && Boolean(patch.showSurfaceBand) !== settings.data.overlay.showSurfaceBand;
     if (patch.showSurfaceBand !== undefined) settings.patch('overlay.showSurfaceBand', Boolean(patch.showSurfaceBand));
@@ -563,7 +574,10 @@ function registerIpc() {
   /** v0.3.0：设置页的「导出 PNG」按钮 —— 转告 overlay 渲染进程去合成（与热键同路） */
   ipcMain.handle('intent:exportPng', () => { requestExportPng(); return { ok: true }; });
   ipcMain.handle('intent:setPresets', (_event, { presets }) => {
-    settings.patch('presets', Array.isArray(presets) && presets.length > 0 ? presets : settings.defaults.presets);
+    // v0.3.4：空数组合法 —— 用户可以取消勾选全部预设路线
+    settings.patch('presets', Array.isArray(presets) ? presets : settings.defaults.presets);
+    controller.refreshRoutesAfterSettings();
+    pushOverlayState();
     return { settings: settings.data, ...statusPayload() };
   });
   ipcMain.handle('intent:listPois', () => controller.pois);

@@ -28,6 +28,7 @@ const api = {
     setRoute: (target) => ipcRenderer.invoke('intent:setRoute', target),
     cycleRoute: (direction = 1) => ipcRenderer.invoke('intent:cycleRoute', { direction }),
     setScaleIndex: (index) => ipcRenderer.invoke('intent:setScaleIndex', { index }),
+    setScale: (scale) => ipcRenderer.invoke('intent:setScale', { scale }),
     cycleScale: (direction = 1) => ipcRenderer.invoke('intent:cycleScale', { direction }),
     setSeed: (seed) => ipcRenderer.invoke('intent:setSeed', { seed }),
     rereadSeed: () => ipcRenderer.invoke('intent:rereadSeed', {}),

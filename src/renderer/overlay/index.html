@@ -10,17 +10,15 @@
     <canvas id="map"></canvas>
 
     <div id="statusbar" class="statusbar hidden">
-      <span class="sb-seed" id="sb-seed">种子 —</span>
-      <!-- v0.3.1：本局游戏状态（场景 / 服务器 / 节日），数据来自主进程 session -->
-      <span class="sb-dot" id="sb-game-dot">·</span>
-      <span class="sb-game" id="sb-game"></span>
-      <span class="sb-dot">·</span>
-      <span class="sb-view" id="sb-view">视图 —</span>
-      <span class="sb-dot">·</span>
-      <span class="sb-route" id="sb-route">路线 —</span>
-      <span class="sb-spacer"></span>
-      <span class="sb-version" id="sb-version"></span>
-      <span class="sb-banner" id="sb-banner"></span>
+      <!-- v0.3.4：状态栏字段可独立显隐，顺序固定；没有内容的字段由 JS 加 .hidden -->
+      <span class="sb-item sb-seed" id="sb-seed">种子 —</span>
+      <span class="sb-item sb-game" id="sb-game"></span>
+      <span class="sb-item sb-server" id="sb-server"></span>
+      <span class="sb-item sb-holiday" id="sb-holiday"></span>
+      <span class="sb-item sb-view" id="sb-view">视图 —</span>
+      <span class="sb-item sb-route" id="sb-route">路线 —</span>
+      <span class="sb-item sb-version" id="sb-version"></span>
+      <span class="sb-item sb-banner" id="sb-banner"></span>
     </div>
 
     <div id="legend" class="legend hidden">
@@ -34,8 +32,26 @@
       <div class="ec-body" id="ec-body"></div>
     </div>
 
+    <!-- v0.3.4：编辑模式控制条。可单独保留/隐藏地图外的状态条、图例和操作提示。 -->
+    <div id="editpanel" class="editpanel hidden">
+      <span class="ep-title">显示</span>
+      <label><input type="checkbox" id="ep-statusbar" /> 状态栏</label>
+      <label><input type="checkbox" id="ep-legend" /> 图例</label>
+      <label><input type="checkbox" id="ep-edithint" /> 提示</label>
+      <button type="button" class="ep-btn" id="ep-map-only">仅地图</button>
+      <button type="button" class="ep-btn" id="ep-show-all">全部显示</button>
+    </div>
+
     <div id="editframe" class="editframe hidden">
-      <div class="ef-hint">编辑模式：拖动移动 · 滚轮缩放 · 悬停查看房间 · 右键复位 · Esc / <span id="ef-hint-exit">Ctrl+0</span> 退出</div>
+      <span class="resize-handle rh-n" data-resize="n"></span>
+      <span class="resize-handle rh-s" data-resize="s"></span>
+      <span class="resize-handle rh-e" data-resize="e"></span>
+      <span class="resize-handle rh-w" data-resize="w"></span>
+      <span class="resize-handle rh-ne" data-resize="ne"></span>
+      <span class="resize-handle rh-nw" data-resize="nw"></span>
+      <span class="resize-handle rh-se" data-resize="se"></span>
+      <span class="resize-handle rh-sw" data-resize="sw"></span>
+      <div class="ef-hint" id="ef-hint">编辑：拖动移动 · 滚轮无极缩放 · 拖边框等比缩放 · 悬停查看房间 · 右键复位 · Esc / <span id="ef-hint-exit">Ctrl+0</span> 退出</div>
     </div>
 
     <!-- v0.3.0：悬停房间详情（编辑模式） -->

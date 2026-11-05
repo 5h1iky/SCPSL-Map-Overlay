@@ -146,8 +146,15 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 .hotkey-note.err { color: var(--err); }
 .hotkey-note.ok { color: var(--ok); }
 
+.checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px 16px;
+}
+.checks label { display: flex; gap: 7px; align-items: center; cursor: pointer; color: var(--text); }
 .presets { display: grid; gap: 4px; }
 .presets label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.presets label.disabled { opacity: 0.45; cursor: default; }
 .presets .hint { color: var(--dim); font-size: 11px; }
 
 /* 自定义路线：下拉框占满剩余宽度，长名字不把按钮挤出去 */

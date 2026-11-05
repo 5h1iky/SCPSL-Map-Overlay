@@ -14,7 +14,8 @@
   const editFrame = document.getElementById('editframe');
   const sbSeed = document.getElementById('sb-seed');
   const sbGame = document.getElementById('sb-game');
-  const sbGameDot = document.getElementById('sb-game-dot');
+  const sbServer = document.getElementById('sb-server');
+  const sbHoliday = document.getElementById('sb-holiday');
   const sbView = document.getElementById('sb-view');
   const sbRoute = document.getElementById('sb-route');
   const sbVersion = document.getElementById('sb-version');
@@ -22,6 +23,11 @@
   const lgHint = document.getElementById('lg-hint');
   const lgSwatches = document.getElementById('lg-swatches');
   const efHintExit = document.getElementById('ef-hint-exit');
+  const efHint = document.getElementById('ef-hint');
+  const editPanel = document.getElementById('editpanel');
+  const epStatusbar = document.getElementById('ep-statusbar');
+  const epLegend = document.getElementById('ep-legend');
+  const epEditHint = document.getElementById('ep-edithint');
   const roomTip = document.getElementById('roomtip');
   const rtTitle = document.getElementById('rt-title');
   const rtIdentity = document.getElementById('rt-identity');
@@ -42,6 +48,13 @@
     fitHeightRatio: 0.35,
     hotkeys: null,
     visible: false,
+    /** v0.3.4：地图外组件显隐（由设置持久化） */
+    chrome: { statusBar: true, legend: true, editHint: true },
+    /** v0.3.4：顶部状态栏逐字段开关 */
+    statusBar: {
+      seed: true, game: true, server: true, holiday: true,
+      view: true, route: true, version: true, banner: true,
+    },
   };
 
   if (isPreview) document.body.classList.add('preview');
@@ -119,6 +132,16 @@
     const lgH = legend.offsetHeight || 28;
     statusbar.style.top = `${Math.max(margin, t.panelY - sbH - 8)}px`;
     legend.style.top = `${Math.min(state.cssHeight - lgH - margin, t.panelY + t.panelH + 6)}px`;
+    positionEditFrame(t);
+  }
+
+  /** v0.3.4：编辑外框必须贴合地图面板，八个缩放手柄据此拖拽。 */
+  function positionEditFrame(t) {
+    if (!editFrame || !t) return;
+    editFrame.style.left = `${t.panelX}px`;
+    editFrame.style.top = `${t.panelY}px`;
+    editFrame.style.width = `${t.panelW}px`;
+    editFrame.style.height = `${t.panelH}px`;
   }
 
   /** 图例：按房间分类色生成色块（与渲染实际用的 accent 分类一致） */
@@ -144,55 +167,75 @@
   }
 
   /**
-   * v0.3.1：游戏状态段（场景 / 服务器 / 节日）。
-   * 数据由主进程 describeSession() 直接给成文案，渲染端不做任何判断。
+   * v0.3.1：游戏状态段。
+   * v0.3.4：场景 / 服务器 IP / 节日拆成独立字段，各自受设置开关控制。
    */
-  function renderGameState(session) {
-    if (!sbGame || !sbGameDot) return;
-    if (!session) {
-      sbGame.classList.add('hidden');
-      sbGameDot.classList.add('hidden');
-      return;
+  function renderGameState(session, fields = {}) {
+    const sceneText = session ? `● ${session.sceneLabel}` : '';
+    setStatusItem(sbGame, sceneText, fields.game, `sb-item sb-game ${session?.sceneTone ?? 'unknown'}`);
+    setStatusItem(sbServer, session?.server ? `IP ${session.server}` : '', fields.server, 'sb-item sb-server');
+    setStatusItem(sbHoliday, session?.holidayLabel ?? '', fields.holiday, 'sb-item sb-holiday');
+    if (sbGame) {
+      sbGame.title = session?.needSeedHint
+        ? `${session.sceneLabel}｜${session.needSeedHint}`
+        : (session?.sceneLabel ?? '');
     }
-    const bits = [`● ${session.sceneLabel}`];
-    if (session.server) bits.push(session.server);
-    if (session.holidayLabel) bits.push(session.holidayLabel);
-    sbGame.textContent = bits.join(' · ');
-    sbGame.className = `sb-game ${session.sceneTone ?? 'unknown'}`;
-    sbGame.title = session.needSeedHint ? `${bits.join(' · ')}｜${session.needSeedHint}` : bits.join(' · ');
-    sbGame.classList.remove('hidden');
-    sbGameDot.classList.remove('hidden');
+  }
+
+  /**
+   * v0.3.4：状态栏字段切换。show=false 或 text 为空时隐藏，避免留下孤零零的分隔符。
+   * @returns {boolean} 该字段是否实际显示
+   */
+  function setStatusItem(el, text, show, className = '') {
+    if (!el) return false;
+    const display = Boolean(show && text);
+    if (className) el.className = className;
+    el.textContent = text ?? '';
+    el.classList.toggle('hidden', !display);
+    return display;
   }
 
   function renderStatus() {
     const s = state.status;
     if (!s) return;
+    const fields = { ...state.statusBar };
+    const session = s.session ?? null;
     const prevSeed = s.seedSource === 'prev-log';
-    sbSeed.textContent = s.seed
-      ? `种子 ${s.seed}${prevSeed ? '（上一局）' : ''}`
-      : '种子 —（去游戏里敲一次 seed）';
-    sbSeed.classList.toggle('prev', Boolean(s.seed) && prevSeed);
-    renderGameState(s.session ?? null);
-    sbView.textContent = s.viewLabel ?? '—';
+    setStatusItem(
+      sbSeed,
+      s.seed ? `种子 ${s.seed}${prevSeed ? '（上一局）' : ''}` : '种子 —（敲 seed）',
+      fields.seed,
+      'sb-item sb-seed',
+    );
+    sbSeed?.classList.toggle('prev', Boolean(s.seed) && prevSeed);
+    renderGameState(session, fields);
+    setStatusItem(sbView, s.viewLabel ?? '—', fields.view, 'sb-item sb-view');
     const route = s.route;
+    let routeText = '无路线';
     if (route && route.ok !== false) {
       const cross = route.portalCount ? ` · 跨层 ${route.portalCount}` : '';
-      sbRoute.textContent = `路线 ${route.fromLabel ?? '?'} → ${route.toLabel ?? '?'}（${route.rooms} 房间${cross}）`;
+      routeText = `路线 ${route.fromLabel ?? '?'} → ${route.toLabel ?? '?'}（${route.rooms} 房间${cross}）`;
     } else if (route && route.reason) {
-      sbRoute.textContent = `路线不可用：${route.reason}`;
-    } else {
-      sbRoute.textContent = '无路线';
+      routeText = `路线不可用：${route.reason}`;
+    } else if (s.showPresetRoutes === false && (s.customRoutes ?? []).length === 0) {
+      routeText = '预设路线已关闭';
     }
+    setStatusItem(sbRoute, routeText, fields.route, 'sb-item sb-route');
     const v = s.version;
-    sbVersion.textContent = v ? `游戏 ${v.game ?? '?'} · 模板 ${v.template ?? '?'}` : '';
+    // v0.3.4：只保留最关键的版本字段；兼容时不再重复显示“匹配”
+    setStatusItem(
+      sbVersion,
+      v ? `游戏 ${v.game ?? '?'} / 模板 ${v.template ?? '?'}` : '',
+      fields.version,
+      'sb-item sb-version',
+    );
     const banner = s.banner;
-    if (banner && banner.code !== 'OK') {
-      sbBanner.textContent = banner.text;
-      sbBanner.className = `sb-banner ${banner.level}`;
-    } else if (banner) {
-      sbBanner.textContent = '版本匹配';
-      sbBanner.className = 'sb-banner info';
-    }
+    setStatusItem(
+      sbBanner,
+      banner && banner.code !== 'OK' ? banner.text : '',
+      fields.banner,
+      `sb-item sb-banner ${banner?.level ?? 'info'}`,
+    );
     if (s.hotkeys) {
       state.hotkeys = s.hotkeys;
       // v0.3.1：本局还没读到种子时，图例条末尾常驻一句提醒（与设置页教程卡同一判断）
@@ -200,9 +243,17 @@
       lgHint.textContent = `${s.hotkeys.cycleView} 切视图 · ${s.hotkeys.cycleRoute} 切路线 · ${s.hotkeys.toggle} 隐藏 · ${s.hotkeys.editMode} 编辑${needHint}`;
       efHintExit.textContent = s.hotkeys.editMode ?? 'Ctrl+0';
     }
-    statusbar.classList.toggle('hidden', !state.visible && !isPreview);
-    legend.classList.toggle('hidden', !state.visible && !isPreview);
+    const hasStatusItem = [sbSeed, sbGame, sbServer, sbHoliday, sbView, sbRoute, sbVersion, sbBanner]
+      .some((el) => el && !el.classList.contains('hidden'));
+    const chrome = state.chrome ?? {};
+    statusbar.classList.toggle('hidden', (!state.visible && !isPreview) || !chrome.statusBar || !hasStatusItem);
+    legend.classList.toggle('hidden', (!state.visible && !isPreview) || !chrome.legend);
     editFrame.classList.toggle('hidden', !state.editMode);
+    efHint?.classList.toggle('hidden', chrome.editHint === false);
+    editPanel?.classList.toggle('hidden', !state.editMode);
+    if (epStatusbar) epStatusbar.checked = chrome.statusBar !== false;
+    if (epLegend) epLegend.checked = chrome.legend !== false;
+    if (epEditHint) epEditHint.checked = chrome.editHint !== false;
     // 显示状态变了，尺寸也就变了 —— 重新夹一次位置（否则刚显出来的条可能还压在旧宽度上）
     positionChrome(state.transform);
   }
@@ -217,14 +268,66 @@
     errorCard.classList.add('hidden');
   }
 
-  /* ── 编辑模式：拖动 / 滚轮 / 悬停详情（v0.3.0） ───────── */
+  /* ── 编辑模式：拖动 / 无极缩放 / 拖边等比缩放 / 悬停详情 ───── */
+  const MIN_SCALE = 0.25;
+  const MAX_SCALE = 4;
+  const clampScale = (value) => Math.max(MIN_SCALE, Math.min(MAX_SCALE, Number(value) || 1));
   let dragging = null;
+  let resizing = null;
+  let scalePersistTimer = null;
+
+  /** 滚轮 / 拖边时先本地重绘（丝滑），停止操作后再落盘，避免每个像素写一次配置。 */
+  function persistScaleSoon(value) {
+    clearTimeout(scalePersistTimer);
+    scalePersistTimer = setTimeout(() => {
+      api?.intent?.setScale?.(clampScale(value));
+    }, 160);
+  }
+
+  function updateChrome(patch) {
+    state.chrome = { ...state.chrome, ...patch };
+    renderStatus();
+    api?.intent?.setOverlay?.({ chrome: patch });
+  }
+
   window.addEventListener('mousedown', (e) => {
     if (!state.editMode || e.button !== 0) return;
+    // 控制条、按钮、输入框只处理自己的交互，不能触发地图拖动
+    if (e.target?.closest?.('.editpanel, button, input')) return;
+    if (e.target?.classList?.contains('resize-handle')) {
+      const t = state.transform;
+      if (!t) return;
+      resizing = {
+        dir: e.target.dataset.resize,
+        startScale: state.scale,
+        centerX: t.panelX + t.panelW / 2,
+        centerY: t.panelY + t.panelH / 2,
+        halfW: Math.max(1, t.panelW / 2),
+        halfH: Math.max(1, t.panelH / 2),
+      };
+      e.preventDefault();
+      hideRoomTip();
+      return;
+    }
     dragging = { startX: e.clientX, startY: e.clientY, anchor: { ...state.anchor } };
     hideRoomTip();
   });
+
   window.addEventListener('mousemove', (e) => {
+    if (resizing) {
+      // 始终围绕面板中心等比缩放：拖左边 / 右边改宽度，拖上边 / 下边改高度，
+      // 四角取两个方向中较大的倍率。面板宽高比不变，满足“按比例放大”。
+      const dir = resizing.dir ?? '';
+      let ratio = 1;
+      if (dir.includes('e')) ratio = (e.clientX - resizing.centerX) / resizing.halfW;
+      else if (dir.includes('w')) ratio = (resizing.centerX - e.clientX) / resizing.halfW;
+      if (dir.includes('s')) ratio = Math.max(ratio, (e.clientY - resizing.centerY) / resizing.halfH);
+      else if (dir.includes('n')) ratio = Math.max(ratio, (resizing.centerY - e.clientY) / resizing.halfH);
+      state.scale = clampScale(resizing.startScale * Math.max(0.05, ratio));
+      state.transform = null;
+      redraw();
+      return;
+    }
     if (dragging) {
       const dx = (e.clientX - dragging.startX) / state.cssWidth;
       const dy = (e.clientY - dragging.startY) / state.cssHeight;
@@ -241,12 +344,27 @@
     if (hit) showRoomTip(hit.room, e.clientX, e.clientY);
     else hideRoomTip();
   });
+
   window.addEventListener('mouseup', () => {
+    if (resizing) {
+      const value = state.scale;
+      resizing = null;
+      clearTimeout(scalePersistTimer);
+      api?.intent?.setScale?.(value);
+      return;
+    }
     if (!dragging) return;
     dragging = null;
     api?.intent?.setOverlay?.({ anchor: state.anchor });
   });
   window.addEventListener('mouseleave', () => hideRoomTip());
+
+  // 编辑模式控制条：勾选即即时生效，并把选择持久化（下次启动保持）
+  epStatusbar?.addEventListener('change', (e) => updateChrome({ statusBar: e.target.checked }));
+  epLegend?.addEventListener('change', (e) => updateChrome({ legend: e.target.checked }));
+  epEditHint?.addEventListener('change', (e) => updateChrome({ editHint: e.target.checked }));
+  document.getElementById('ep-map-only')?.addEventListener('click', () => updateChrome({ statusBar: false, legend: false, editHint: false }));
+  document.getElementById('ep-show-all')?.addEventListener('click', () => updateChrome({ statusBar: true, legend: true, editHint: true }));
 
   /* ── v0.3.0：悬停房间详情 ───────────────────────────────────
      数据全部来自 RenderLayout（主进程算好的），这里只做拼装：
@@ -340,13 +458,21 @@
   }
   window.addEventListener('wheel', (e) => {
     if (!state.editMode) return;
-    api?.intent?.cycleScale?.(e.deltaY > 0 ? -1 : 1);
-  }, { passive: true });
+    e.preventDefault();
+    // v0.3.4：指数式连续缩放，滚轮每一格都产生细小变化（0.25×–4×）
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    state.scale = clampScale(state.scale * factor);
+    state.transform = null;
+    redraw();
+    persistScaleSoon(state.scale);
+  }, { passive: false });
   window.addEventListener('contextmenu', () => {
     if (!state.editMode) return;
     state.anchor = { x: 0.5, y: 0.62 };
+    state.scale = 1;
+    state.transform = null;
     redraw();
-    api?.intent?.setOverlay?.({ anchor: state.anchor });
+    api?.intent?.setOverlay?.({ anchor: state.anchor, scale: 1 });
   });
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && state.editMode) api?.intent?.setOverlay?.({ editMode: false });
@@ -377,6 +503,8 @@
       state.editMode = Boolean(overlay.editMode);
       state.visible = overlay.visible ?? state.visible;
       state.fitHeightRatio = overlay.fitHeightRatio ?? state.fitHeightRatio;
+      if (overlay.chrome) state.chrome = { ...state.chrome, ...overlay.chrome };
+      if (overlay.statusBar) state.statusBar = { ...state.statusBar, ...overlay.statusBar };
       if (prevScale !== state.scale) state.transform = null;
       redraw();
       renderStatus();
@@ -418,14 +546,15 @@
       if (options.fitHeightRatio !== undefined) state.fitHeightRatio = options.fitHeightRatio;
       if (options.colorByCategory !== undefined) state.colorByCategory = options.colorByCategory;
       if (options.anchor !== undefined) state.anchor = options.anchor;
+      if (options.chrome) state.chrome = { ...state.chrome, ...options.chrome };
+      if (options.statusBar) state.statusBar = { ...state.statusBar, ...options.statusBar };
+      if (options.editMode !== undefined) state.editMode = Boolean(options.editMode);
+      if (options.scale !== undefined) state.scale = clampScale(options.scale);
       state.transform = null;
       resize();
       redraw();
       renderLegend();
       renderStatus();
-      positionChrome(state.transform);
-      statusbar.classList.remove('hidden');
-      legend.classList.remove('hidden');
       positionChrome(state.transform);
       return { transform: state.transform };
     },
@@ -445,6 +574,32 @@
     compose() {
       const cv = window.OverlayRender?.composeExport?.(state.transform, state.dpr || 1);
       return cv ? { width: cv.width, height: cv.height } : null;
+    },
+    /** v0.3.4：编辑模式 UI 回归用的只读状态快照 */
+    getState() {
+      return {
+        scale: state.scale,
+        transform: state.transform,
+        editMode: state.editMode,
+        chrome: { ...state.chrome },
+        statusBar: { ...state.statusBar },
+        statusItems: {
+          seed: !sbSeed?.classList.contains('hidden'),
+          game: !sbGame?.classList.contains('hidden'),
+          server: !sbServer?.classList.contains('hidden'),
+          holiday: !sbHoliday?.classList.contains('hidden'),
+          view: !sbView?.classList.contains('hidden'),
+          route: !sbRoute?.classList.contains('hidden'),
+          version: !sbVersion?.classList.contains('hidden'),
+          banner: !sbBanner?.classList.contains('hidden'),
+        },
+        visible: {
+          statusbar: !statusbar.classList.contains('hidden'),
+          legend: !legend.classList.contains('hidden'),
+          editFrame: !editFrame.classList.contains('hidden'),
+          editPanel: !editPanel.classList.contains('hidden'),
+        },
+      };
     },
   };
 

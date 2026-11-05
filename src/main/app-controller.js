@@ -215,13 +215,22 @@ export class AppController extends EventEmitter {
       }
     }
     this.graph = buildGraph(this.map);
-    this.selectRoute(this.routePresetId ?? this.defaultPresetId());
+    const allowed = this.enabledPresets();
+    const preferred = allowed.some((route) => route.id === this.routePresetId)
+      ? this.routePresetId
+      : allowed[0]?.id ?? null;
+    this.selectRoute(preferred);
     return this.lastLayout;
   }
 
   defaultPresetId() {
     const enabled = this.enabledPresets();
-    return enabled[0]?.id ?? ROUTE_PRESETS[0].id;
+    return enabled[0]?.id ?? null;
+  }
+
+  /** v0.3.4：当前配置是否允许显示预设路线。 */
+  showPresetRoutes() {
+    return this.settings?.data?.routes?.showPresets !== false;
   }
 
   /** 用户自定义路线（存于配置，端点是**与种子无关**的选择器） */
@@ -244,11 +253,30 @@ export class AppController extends EventEmitter {
    * 自定义路线只要 enabled（默认开）就自动进入循环 —— 用户加了路线就应该能用热键切到。
    */
   enabledPresets() {
+    /**
+     * v0.3.4：预设路线总开关关闭时，内置预设一律不参与循环/默认路线；
+     * 自定义路线仍可使用（它不属于“预设路线”）。
+     * 不再兜底返回全部内置预设 —— 那会让用户永远关不掉预设路线。
+     */
     const enabled = this.settings?.data?.presets ?? [];
-    const builtin = ROUTE_PRESETS.filter((preset) => enabled.includes(preset.id));
+    const builtin = this.showPresetRoutes()
+      ? ROUTE_PRESETS.filter((preset) => enabled.includes(preset.id))
+      : [];
     const custom = this.customRoutes().filter((route) => route.enabled !== false);
-    const list = [...builtin, ...custom];
-    return list.length > 0 ? list : [...ROUTE_PRESETS, ...custom];
+    return [...builtin, ...custom];
+  }
+
+  /** v0.3.4：设置变化后重选当前路线；若当前预设已被总开关关闭则退回可用路线或“无路线”。 */
+  refreshRoutesAfterSettings() {
+    if (!this.map) return null;
+    const allowed = this.enabledPresets();
+    const currentAllowed = allowed.some((route) => route.id === this.routePresetId);
+    const next = currentAllowed ? this.routePresetId : allowed[0]?.id ?? null;
+    if (next) return this.selectRoute(next);
+    this.route = null;
+    this.routePresetId = null;
+    this.buildLayoutNow();
+    return null;
   }
 
   /**
@@ -286,7 +314,14 @@ export class AppController extends EventEmitter {
       resolved = this.planSelector(target);
       this.routePresetId = resolved?.presetId ?? 'custom';
     } else {
-      resolved = this.planPreset(this.defaultPresetId());
+      const fallbackId = this.defaultPresetId();
+      if (!fallbackId) {
+        this.route = null;
+        this.routePresetId = null;
+        this.buildLayoutNow();
+        return null;
+      }
+      resolved = this.planPreset(fallbackId);
       this.routePresetId = resolved?.presetId ?? null;
     }
     this.route = resolved;
@@ -329,21 +364,32 @@ export class AppController extends EventEmitter {
     return this.setView(next);
   }
 
+  /** v0.3.4：连续缩放倍率（0.25–4.0），供滚轮 / 拖边 / 设置滑块共用。 */
+  setScale(value) {
+    const next = Math.round(Math.max(0.25, Math.min(4, Number(value) || 1)) * 1000) / 1000;
+    this.settings?.patch('overlay.scale', next);
+    this.emitStatus();
+    return next;
+  }
+
+  /** 兼容旧调用：固定档位点击时映射成对应的连续倍率。 */
   setScaleIndex(index) {
     const clamped = Math.max(0, Math.min(STYLE.scaleSteps.length - 1, index));
     this.settings?.patch('overlay.scaleIndex', clamped);
+    this.settings?.patch('overlay.scale', STYLE.scaleSteps[clamped] ?? 1);
     this.emitStatus();
     return clamped;
   }
 
+  /** Ctrl+4：每次 10% 连续步进，不再在固定档位之间跳。 */
   cycleScale(direction = 1) {
-    const current = this.settings?.data?.overlay?.scaleIndex ?? STYLE.defaultScaleIndex;
-    return this.setScaleIndex((current + direction + STYLE.scaleSteps.length) % STYLE.scaleSteps.length);
+    return this.setScale(this.scale + (direction > 0 ? 0.1 : -0.1));
   }
 
   get scale() {
-    const index = this.settings?.data?.overlay?.scaleIndex ?? STYLE.defaultScaleIndex;
-    return STYLE.scaleSteps[index] ?? 1;
+    const raw = this.settings?.data?.overlay?.scale;
+    const fallback = STYLE.scaleSteps[this.settings?.data?.overlay?.scaleIndex ?? STYLE.defaultScaleIndex] ?? 1;
+    return Math.max(0.25, Math.min(4, Number(raw) || fallback));
   }
 
   /** 预设路线解析：候选集合 → 最短路（多起点时全局取最小，§9.3） */
@@ -473,6 +519,7 @@ export class AppController extends EventEmitter {
       viewIndex: VIEWS.indexOf(this.viewZone),
       scaleIndex: this.settings?.data?.overlay?.scaleIndex ?? STYLE.defaultScaleIndex,
       scale: this.scale,
+      showPresetRoutes: this.showPresetRoutes(),
       route: this.route
         ? {
             presetId: this.route.presetId ?? null,

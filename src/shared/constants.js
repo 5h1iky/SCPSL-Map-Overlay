@@ -81,7 +81,7 @@ export const HOTKEY_LABEL = {
   toggle: '显示 / 隐藏覆盖层',
   cycleView: '循环视图',
   cycleRoute: '循环路线预设',
-  cycleScale: '循环缩放档位',
+  cycleScale: '连续缩放',
   rereadSeed: '强制重读种子',
   editMode: '编辑模式（取消穿透）',
   exportPng: '导出当前地图 PNG',

@@ -12,10 +12,19 @@ export const DEFAULT_SETTINGS = {
   hotkeys: { ...DEFAULT_HOTKEYS },
   overlay: {
     opacity: STYLE.defaultOpacity,
+    /** v0.3.4：连续缩放倍数（0.25–4.0，步进 0.01），不再受固定档位限制 */
+    scale: 1,
+    /** 旧版固定档位，仅用于迁移旧配置 / 诊断显示 */
     scaleIndex: STYLE.defaultScaleIndex,
     autoFit: true,
     /** 相对屏幕左上角的归一化位置（0..1），默认放在屏幕中下部 */
     anchor: { x: 0.5, y: 0.62 },
+    /** v0.3.4：地图以外哪些覆盖层组件可见（编辑模式可快捷切换） */
+    chrome: {
+      statusBar: true,
+      legend: true,
+      editHint: true,
+    },
     /**
      * 覆盖层显示在哪块屏（v0.3.1 重新设计）：
      *   null  = 主显示器；数字 = Electron display.id（设置页按启动时枚举到的显示器让你选）。
@@ -46,7 +55,22 @@ export const DEFAULT_SETTINGS = {
     /** 种子历史（v0.3.0）：[{seed, source, server, at}]，上限 20，同种子去重置顶 */
     history: [],
   },
+  /** v0.3.4：顶部状态栏逐字段开关（服务器 IP / 游戏状态 / 种子等独立控制） */
+  statusBar: {
+    seed: true,
+    game: true,
+    server: true,
+    holiday: true,
+    view: true,
+    route: true,
+    version: true,
+    banner: true,
+  },
   presets: [...DEFAULT_VISIBLE_PRESETS],
+  /** v0.3.4：预设路线总开关；关闭后地图不再绘制内置预设路线 */
+  routes: {
+    showPresets: true,
+  },
   /** 用户自定义路线：[{id,label,from,to,enabled}]，端点是与种子无关的选择器 */
   customRoutes: [],
   lastZone: 'LightContainment',
@@ -98,19 +122,45 @@ export function normalizeSettings(input) {
   const s = mergeDefaults(DEFAULT_SETTINGS, input);
   s.overlay.opacity = clampNumber(s.overlay.opacity, 0.3, 1, DEFAULT_SETTINGS.overlay.opacity);
   s.overlay.scaleIndex = Math.round(clampNumber(s.overlay.scaleIndex, 0, STYLE.scaleSteps.length - 1, STYLE.defaultScaleIndex));
+  /**
+   * v0.3.4：迁移旧配置。
+   * 旧版只有固定 scaleIndex（0.8/1.0/1.3/1.6）；新版使用连续 overlay.scale。
+   * 只有旧配置没有显式 scale 时才按档位换算，避免每次启动覆盖用户的无极缩放值。
+   */
+  const legacyScale = STYLE.scaleSteps[s.overlay.scaleIndex] ?? DEFAULT_SETTINGS.overlay.scale;
+  const rawScale = input?.overlay?.scale;
+  s.overlay.scale = Math.round(clampNumber(rawScale ?? legacyScale, 0.25, 4, DEFAULT_SETTINGS.overlay.scale) * 1000) / 1000;
+  s.overlay.chrome = {
+    statusBar: s.overlay.chrome?.statusBar !== false,
+    legend: s.overlay.chrome?.legend !== false,
+    editHint: s.overlay.chrome?.editHint !== false,
+  };
   s.overlay.anchor = {
     x: clampNumber(s.overlay.anchor?.x, 0, 1, DEFAULT_SETTINGS.overlay.anchor.x),
     y: clampNumber(s.overlay.anchor?.y, 0, 1, DEFAULT_SETTINGS.overlay.anchor.y),
   };
   s.overlay.colorByCategory = s.overlay.colorByCategory !== false;
   s.overlay.showSurfaceBand = s.overlay.showSurfaceBand !== false;
-  if (!Array.isArray(s.presets) || s.presets.length === 0) s.presets = [...DEFAULT_VISIBLE_PRESETS];
+  // v0.3.4：允许用户取消勾选全部预设（空数组合法）；只有缺失 / 非数组才回落默认
+  if (!Array.isArray(s.presets)) s.presets = [...DEFAULT_VISIBLE_PRESETS];
   s.presets = s.presets.filter((id) => typeof id === 'string');
   if (s.seed.manualOverride !== null) {
     const n = Number(s.seed.manualOverride);
     s.seed.manualOverride = Number.isInteger(n) && n >= 1 && n <= 2147483647 ? n : null;
   }
   s.overlay.smartVisibility = Boolean(s.overlay.smartVisibility);
+  // v0.3.4：状态栏字段开关；缺失字段默认显示，只有显式 false 才隐藏
+  s.statusBar = {
+    seed: s.statusBar?.seed !== false,
+    game: s.statusBar?.game !== false,
+    server: s.statusBar?.server !== false,
+    holiday: s.statusBar?.holiday !== false,
+    view: s.statusBar?.view !== false,
+    route: s.statusBar?.route !== false,
+    version: s.statusBar?.version !== false,
+    banner: s.statusBar?.banner !== false,
+  };
+  s.routes = { showPresets: s.routes?.showPresets !== false };
   /**
    * v0.3.1：显示器模型从 'auto' | 'primary' 改成「固定 displayId + 可选启动时定位一次」。
    * 旧配置迁移：display='auto' → 不回退轮询（那正是卡顿根因），改成“启动时定位一次”，
